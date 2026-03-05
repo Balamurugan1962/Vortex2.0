@@ -18,13 +18,29 @@ from modules.camera_singleton import CameraSingleton
 # Active WebSocket connections for violations
 active_violation_connections: Set[WebSocket] = set()
 
+# Exam session state tracking
+exam_session_state = {
+    "active": False,
+    "violation_count": 0,
+    "max_violations": 10,
+    "exam_terminated": False
+}
+
+# Global monitoring task reference
+violation_monitor_task = None
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Application startup logic
-    # Start background violation monitoring task
-    violation_task = asyncio.create_task(monitor_violations())
+    # Don't start monitoring automatically - wait for /start_exam
     yield
     # Application shutdown logic
+    global violation_monitor_task
+    # Cancel monitoring task if running
+    if violation_monitor_task and not violation_monitor_task.done():
+        violation_monitor_task.cancel()
+    CameraSingleton.release()
+    stop_all_monitoring()
     violation_task.cancel()
     CameraSingleton.release()
     stop_all_monitoring()
@@ -79,18 +95,18 @@ async def video_endpoint(websocket: WebSocket):
                     print("Too many consecutive failures, closing connection")
                     break
                     
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.01)  # Minimal delay on failure instead of 0.1s
                 continue
             
             consecutive_failures = 0  # Reset on success
             
             try:
-                # Encode frame to JPEG
-                encode_success, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                # Encode frame to JPEG with lower quality for speed
+                encode_success, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
                 
                 if not encode_success:
                     print("Failed to encode frame")
-                    await asyncio.sleep(0.05)
+                    await asyncio.sleep(0.01)
                     continue
                 
                 frame_base64 = base64.b64encode(buffer).decode('utf-8')
@@ -113,8 +129,14 @@ async def video_endpoint(websocket: WebSocket):
                 traceback.print_exc()
                 break
             
-            await asyncio.sleep(0.1)  # ~10fps for frontend stability
+            await asyncio.sleep(0.03)  # ~30fps for better responsiveness instead of 0.1s (10fps)
             
+    except WebSocketDisconnect:
+        print(f"Video WebSocket client disconnected (sent {frame_count if 'frame_count' in locals() else 0} frames)")
+    except Exception as e:
+        print(f"Video WebSocket error: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
     except WebSocketDisconnect:
         print(f"Video WebSocket client disconnected (sent {frame_count if 'frame_count' in locals() else 0} frames)")
     except Exception as e:
@@ -182,13 +204,32 @@ async def monitor_violations():
                 violation_id, timestamp, event_type, confidence, encrypted_metadata = violation
                 last_violation_id = max(last_violation_id, violation_id)
                 
+                # STRICT 10 VIOLATION LIMIT: Do not broadcast violations beyond the limit
+                if exam_session_state["violation_count"] >= exam_session_state["max_violations"]:
+                    print(f"⛔ Exam violation limit reached ({exam_session_state['max_violations']}). Blocking violation {violation_id}")
+                    continue
+                
+                # Increment violation count
+                exam_session_state["violation_count"] += 1
+                current_count = exam_session_state["violation_count"]
+                
                 violation_data = {
                     "id": violation_id,
                     "timestamp": timestamp,
                     "event_type": event_type,
                     "confidence": confidence,
-                    "type": "violation"  # Distinguish from ping messages
+                    "type": "violation",  # Distinguish from ping messages
+                    "violation_count": current_count,  # Add count for frontend
+                    "max_violations": exam_session_state["max_violations"]
                 }
+                
+                print(f"✓ Violation {current_count}/{exam_session_state['max_violations']}: {event_type}")
+                
+                # If this is the 10th violation, mark exam as terminated
+                if current_count >= exam_session_state["max_violations"]:
+                    exam_session_state["exam_terminated"] = True
+                    violation_data["exam_terminated"] = True
+                    print(f"🛑 EXAM TERMINATED: Violation limit exceeded!")
                 
                 # Broadcast to all connected WebSocket clients
                 disconnected = set()
@@ -211,11 +252,29 @@ async def monitor_violations():
 
 @app.post("/start_exam")
 async def start_exam():
+    global exam_session_state, violation_monitor_task
+    
+    # Initialize exam session state
+    exam_session_state = {
+        "active": True,
+        "violation_count": 0,
+        "max_violations": 10,
+        "exam_terminated": False
+    }
+    
+    print("🎓 Exam session started - violation limit: 10")
+    
+    # Start the violation monitor task for this exam
+    if violation_monitor_task is None or violation_monitor_task.done():
+        violation_monitor_task = asyncio.create_task(monitor_violations())
+        print("✓ Violation monitor started")
+    
     # Initialize camera FIRST before any monitoring or WebSocket connections
     print("Pre-initializing camera for exam...")
     cap = CameraSingleton.get_cap()
     
     if cap is None or not cap.isOpened():
+        exam_session_state["active"] = False
         return {"status": "error", "message": "Camera not available"}
     
     # Test camera is actually working - try multiple times for stability
@@ -227,23 +286,54 @@ async def start_exam():
         await asyncio.sleep(0.05)
     
     if not ret:
+        exam_session_state["active"] = False
         return {"status": "error", "message": "Camera not responding"}
     
-    print(f"Camera verified: {test_frame.shape}")
+    print(f"✅ Camera verified: {test_frame.shape}")
     
     # Now start all monitoring tasks
     await start_all_monitoring()
-    return {"status": "monitoring_started"}
+    return {
+        "status": "monitoring_started",
+        "violation_limit": exam_session_state["max_violations"]
+    }
 
 @app.post("/stop_exam")
 async def stop_exam():
+    global exam_session_state, violation_monitor_task
+    exam_session_state["active"] = False
     stop_all_monitoring()
-    return {"status": "monitoring_stopped"}
+    
+    # Cancel violation monitor task
+    if violation_monitor_task and not violation_monitor_task.done():
+        violation_monitor_task.cancel()
+        print("✓ Violation monitor stopped")
+    
+    final_count = exam_session_state["violation_count"]
+    was_terminated = exam_session_state["exam_terminated"]
+    
+    print(f"🏁 Exam session ended - Final violations: {final_count}/10 - Terminated: {was_terminated}")
+    
+    return {
+        "status": "monitoring_stopped",
+        "final_violation_count": final_count,
+        "was_terminated": was_terminated
+    }
 
 @app.get("/logs")
 async def handle_get_logs(limit: int = 50):
     logs = get_logs(limit=limit)
     return logs
+
+@app.get("/violation_status")
+async def get_violation_status():
+    """Get current exam violation status."""
+    return {
+        "violation_count": exam_session_state["violation_count"],
+        "max_violations": exam_session_state["max_violations"],
+        "exam_active": exam_session_state["active"],
+        "exam_terminated": exam_session_state["exam_terminated"]
+    }
 
 @app.get("/integrity_score")
 async def get_integrity_score():
