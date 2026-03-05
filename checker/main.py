@@ -41,9 +41,6 @@ async def lifespan(app: FastAPI):
         violation_monitor_task.cancel()
     CameraSingleton.release()
     stop_all_monitoring()
-    violation_task.cancel()
-    CameraSingleton.release()
-    stop_all_monitoring()
 
 app = FastAPI(title="ExamShield AI Core Engine", lifespan=lifespan)
 
@@ -308,6 +305,11 @@ async def stop_exam():
     if violation_monitor_task and not violation_monitor_task.done():
         violation_monitor_task.cancel()
         print("✓ Violation monitor stopped")
+    
+    # PROPERLY RELEASE CAMERA - This stops the camera light
+    print("Releasing camera resources...")
+    CameraSingleton.release()
+    print("✅ Camera released and light turned off")
     
     final_count = exam_session_state["violation_count"]
     was_terminated = exam_session_state["exam_terminated"]

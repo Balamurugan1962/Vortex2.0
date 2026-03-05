@@ -70,6 +70,8 @@ const VIOLATION_MESSAGES: { [key: string]: string } = {
     VOICE_DETECTED: "Voice/audio detected",
     KEYBOARD_NAVIGATION_ATTEMPT: "Keyboard navigation attempt",
     WINDOW_SWITCH_DETECTED: "Window switching detected",
+    GAZE_AWAY_FROM_SCREEN: "👀 Looking away from screen",
+    PHONE_HIDDEN_DETECTED: "📱 Suspicious activity - hidden device detected",
 };
 
 // Mock Question Data
@@ -113,7 +115,7 @@ interface Question {
     id: string;
     type: string;
     question: string;
-    options: string[];
+    options?: string[];
     correctAnswers?: number[];
     state?: string;
 }
@@ -176,7 +178,7 @@ function ExamContent() {
                 setUserEmail(userData.email);
 
                 // Check if already submitted
-                const checkRes = await fetch(`http://localhost:3002/api/submissions/check?email=${userData.email}`);
+                const checkRes = await fetch(`http://localhost:3001/api/submissions/check?email=${userData.email}`);
                 const checkData = await checkRes.json();
 
                 if (checkData.hasSubmitted) {
@@ -206,7 +208,7 @@ function ExamContent() {
 
         const fetchQuestions = async () => {
             try {
-                const response = await fetch('http://localhost:3002/api/questions');
+                const response = await fetch('http://localhost:3001/api/questions');
                 if (!response.ok) throw new Error('Failed to fetch questions');
                 const data = await response.json();
 
@@ -644,7 +646,7 @@ function ExamContent() {
                 violation_details: violationCounts
             };
 
-            const response = await fetch('http://localhost:3002/api/submissions', {
+            const response = await fetch('http://localhost:3001/api/submissions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(submissionData)
