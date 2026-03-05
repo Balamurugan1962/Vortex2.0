@@ -1,5 +1,6 @@
 import cv2
 import asyncio
+import time
 
 from modules.integrity_logger import log_violation
 from modules.camera_singleton import CameraSingleton
@@ -21,12 +22,14 @@ GADGET_CLASSES = {
 }
 
 is_running = False
+last_gadget_log = {}  # Track last log time for each gadget type
+GADGET_DEBOUNCE_SECONDS = 8.0  # Only log same gadget once per 8 seconds
 
 def _run_model_inference(frame):
     return list(model(frame, stream=True, verbose=False))
 
 async def start_gadget_monitor():
-    global is_running
+    global is_running, last_gadget_log
     if not model:
         print("YOLO model not loaded, skipping gadget detection.")
         return
@@ -39,6 +42,7 @@ async def start_gadget_monitor():
             continue
         
         results = await asyncio.to_thread(_run_model_inference, frame)
+        current_time = time.time()
         
         for r in results:
             boxes = r.boxes
@@ -48,8 +52,13 @@ async def start_gadget_monitor():
                     conf = float(box.conf[0])
                     if conf > 0.6: # Confidence threshold
                         event_type = GADGET_CLASSES[cls_id]
-                        xyxy = box.xyxy[0].tolist()
-                        log_violation(event_type, conf, {"bounding_box": xyxy})
+                        
+                        # Debounce: only log if enough time has passed since last log
+                        last_log_time = last_gadget_log.get(event_type, 0)
+                        if current_time - last_log_time > GADGET_DEBOUNCE_SECONDS:
+                            xyxy = box.xyxy[0].tolist()
+                            log_violation(event_type, conf, {"bounding_box": xyxy})
+                            last_gadget_log[event_type] = current_time
 
         # Process approximately 1 frame per second to save CPU cycles
         await asyncio.sleep(1.0)
