@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import * as api from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,18 +18,37 @@ export default function StudentConnectPage() {
     const [downloadProgress, setDownloadProgress] = useState(0);
 
     const handleConnect = async () => {
-        if (examCode !== "VX-12345" && !examUrl.includes("VX-12345")) {
-            alert("Invalid Exam Code. Please use 'VX-12345' for testing.");
-            return;
-        }
+        if (!examCode && !examUrl) return;
+
+        const codeToUse = examCode || examUrl.split('/').pop() || "";
 
         setIsConnecting(true);
-        // Simulate downloading exam package
-        for (let i = 0; i <= 100; i += 20) {
-            setDownloadProgress(i);
-            await new Promise(resolve => setTimeout(resolve, 400));
+        setDownloadProgress(0);
+
+        try {
+            // Start download simulation/real fetch
+            const bundlePromise = api.getExamBundle(codeToUse);
+
+            // Simulate progress while fetching
+            for (let i = 0; i <= 90; i += 15) {
+                setDownloadProgress(i);
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
+
+            const bundle = await bundlePromise;
+
+            // Store bundle in localStorage for offline access (Tauri friendly)
+            localStorage.setItem(`vortex_exam_${codeToUse}`, JSON.stringify(bundle));
+            localStorage.setItem('vortex_current_exam_code', codeToUse);
+
+            setDownloadProgress(100);
+            await new Promise(resolve => setTimeout(resolve, 500));
+            router.push("/student/permissions");
+        } catch (error: any) {
+            alert(error.message || "Failed to download exam package. Please check your connection.");
+            setIsConnecting(false);
+            setDownloadProgress(0);
         }
-        router.push("/student/permissions");
     };
 
     const handleLogout = () => {

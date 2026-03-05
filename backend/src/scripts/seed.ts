@@ -1,50 +1,50 @@
-import { pool, initDb } from '../db';
-import bcrypt from 'bcryptjs';
+import { pool, initDb } from "../db";
+import bcrypt from "bcryptjs";
 
 const seedDatabase = async () => {
-    try {
-        console.log('Initializing database schema...');
-        await initDb();
+  try {
+    console.log("Initializing database schema...");
+    await initDb();
 
-        console.log('Seeding demo accounts...');
+    console.log("Seeding demo accounts...");
 
-        const salt = await bcrypt.genSalt(10);
-        const passwordHash = await bcrypt.hash('password123', salt);
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash("password123", salt);
 
-        // Demo Instructor
-        await pool.query(
-            `INSERT INTO users (name, email, password_hash, role) 
-             VALUES ($1, $2, $3, $4) 
+    // Demo Instructor
+    await pool.query(
+      `INSERT INTO users (name, email, password_hash, role)
+             VALUES ($1, $2, $3, $4)
              ON CONFLICT (email) DO NOTHING`,
-            ['Demo Instructor', 'instructor@demo.com', passwordHash, 'instructor']
-        );
+      ["Demo Instructor", "instructor@demo.com", passwordHash, "instructor"],
+    );
 
-        // Demo Student
-        await pool.query(
-            `INSERT INTO users (name, email, password_hash, role) 
-             VALUES ($1, $2, $3, $4) 
+    // Demo Student
+    await pool.query(
+      `INSERT INTO users (name, email, password_hash, role)
+             VALUES ($1, $2, $3, $4)
              ON CONFLICT (email) DO NOTHING`,
-            ['Demo Student', 'student@demo.com', passwordHash, 'student']
-        );
+      ["Demo Student", "student@demo.com", passwordHash, "student"],
+    );
 
-        // Demo Admin
-        await pool.query(
-            `INSERT INTO users (name, email, password_hash, role) 
-             VALUES ($1, $2, $3, $4) 
+    // Demo Admin
+    await pool.query(
+      `INSERT INTO users (name, email, password_hash, role)
+             VALUES ($1, $2, $3, $4)
              ON CONFLICT (email) DO NOTHING`,
-            ['Demo Admin', 'admin@demo.com', passwordHash, 'admin']
-        );
+      ["Demo Admin", "admin@demo.com", passwordHash, "admin"],
+    );
 
-        console.log('Successfully seeded demo accounts!');
-        console.log('Admin: admin@demo.com / password123');
-        console.log('Instructor: instructor@demo.com / password123');
-        console.log('Student: student@demo.com / password123');
+    console.log("Successfully seeded demo accounts!");
+    console.log("Admin: admin@demo.com / c");
+    console.log("Instructor: instructor@demo.com / password123");
+    console.log("Student: student@demo.com / password123");
 
-        process.exit(0);
-    } catch (error) {
-        console.error('Error seeding demo accounts:', error);
-        process.exit(1);
-    }
+    process.exit(0);
+  } catch (error) {
+    console.error("Error seeding demo accounts:", error);
+    process.exit(1);
+  }
 };
 
 seedDatabase();

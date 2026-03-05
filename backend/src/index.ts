@@ -5,6 +5,7 @@ import { pool, initDb } from './db';
 import authRoutes from './routes/auth';
 import adminRoutes from './routes/admin';
 import settingsRoutes from './routes/settings';
+import examRoutes from './routes/exams';
 
 dotenv.config();
 
@@ -22,6 +23,7 @@ initDb();
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/exams', examRoutes);
 
 // Test raw DB connection route
 app.get('/api/health', async (req, res) => {

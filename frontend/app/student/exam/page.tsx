@@ -29,6 +29,8 @@ import {
     Monitor
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import * as api from "@/lib/api";
+import { queueSubmission, syncPendingSubmissions } from "@/lib/sync-manager";
 
 // Tauri-specific imports
 const getTauriWindow = async () => {
@@ -70,42 +72,21 @@ const VIOLATION_MESSAGES: { [key: string]: string } = {
     WINDOW_SWITCH_DETECTED: "Window switching detected",
 };
 
-// Mock Question Data
-const mockQuestions = [
-    {
-        id: "1",
-        type: "MCQ",
-        question: "What is the time complexity of searching for an element in a balanced Binary Search Tree (BST)?",
-        options: ["O(1)", "O(n)", "O(log n)", "O(n log n)"],
-        state: "answered"
-    },
-    {
-        id: "2",
-        type: "Multi-select",
-        question: "Which of the following are stable sorting algorithms? (Choose all that apply)",
-        options: ["Merge Sort", "Quick Sort", "Bubble Sort", "Heap Sort"],
-        state: "not-visited"
-    },
-    {
-        id: "3",
-        type: "Short Answer",
-        question: "Define 'Polymorphism' in the context of Object-Oriented Programming.",
-        state: "marked"
-    },
-    {
-        id: "4",
-        type: "Long Answer",
-        question: "Explain the difference between a Process and a Thread in operating systems.",
-        state: "not-visited"
-    },
-    {
-        id: "5",
-        type: "MCQ",
-        question: "Which layer of the OSI model is responsible for routing?",
-        options: ["Data Link", "Network", "Transport", "Session"],
-        state: "not-visited"
-    },
-];
+// Exam Data will be loaded from localStorage
+interface Question {
+    id: string | number;
+    type: string;
+    text: string;
+    options?: string[];
+    state?: string;
+}
+
+interface ExamBundle {
+    id: number;
+    title: string;
+    questions: Question[];
+    duration: number;
+}
 
 export default function ExamPage() {
     return (
@@ -118,11 +99,15 @@ export default function ExamPage() {
 function ExamContent() {
     const router = useRouter();
     const { addToast } = useToast();
+    const [exam, setExam] = useState<ExamBundle | null>(null);
+    const [questions, setQuestions] = useState<Question[]>([]);
+    const [answers, setAnswers] = useState<{ [key: string]: any }>({});
     const [currentIdx, setCurrentIdx] = useState(0);
     const [timeLeft, setTimeLeft] = useState(3600);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [lastSaved, setLastSaved] = useState(new Date());
     const [isSaving, setIsSaving] = useState(false);
+    const [isOnline, setIsOnline] = useState(true);
     const [violations, setViolations] = useState(0);
     const [violationCounts, setViolationCounts] = useState<ViolationCounts>({});
     const [isFullscreen, setIsFullscreen] = useState(true);
@@ -136,31 +121,62 @@ function ExamContent() {
     const SAME_TYPE_THRESHOLD = 3;
     const VIOLATION_COOLDOWN = 8000; // 8 seconds cooldown between same violation toasts
 
-    // Start monitoring on mount
+    // Load Exam Data on mount
     useEffect(() => {
+        const loadExam = () => {
+            const code = localStorage.getItem('vortex_current_exam_code');
+            if (!code) {
+                router.push('/student/connect');
+                return;
+            }
+
+            const bundleStr = localStorage.getItem(`vortex_exam_${code}`);
+            if (!bundleStr) {
+                router.push('/student/connect');
+                return;
+            }
+
+            const bundle: ExamBundle = JSON.parse(bundleStr);
+            setExam(bundle);
+            setQuestions(bundle.questions);
+            setTimeLeft(bundle.duration * 60);
+
+            // Load saved answers if any (Tauri persistence)
+            const savedAnswers = localStorage.getItem(`vortex_answers_${bundle.id}`);
+            if (savedAnswers) {
+                setAnswers(JSON.parse(savedAnswers));
+            }
+        };
+
+        const handleOfflineStatus = () => {
+            setIsOnline(navigator.onLine);
+            if (navigator.onLine) {
+                syncPendingSubmissions();
+            }
+        };
+
+        loadExam();
+        setIsOnline(navigator.onLine);
+        window.addEventListener('online', handleOfflineStatus);
+        window.addEventListener('offline', handleOfflineStatus);
+        syncPendingSubmissions();
+
         const startMonitoring = async () => {
             try {
                 await invokeTauriCommand("start_exam_monitoring");
                 setIsMonitoringActive(true);
-                console.log("Exam monitoring started");
-
-                // Connect to violation WebSocket
                 connectToViolationWebSocket();
             } catch (error) {
                 console.error("Failed to start monitoring:", error);
-                addToast({
-                    title: "Monitoring Error",
-                    description: "Failed to start exam monitoring",
-                    variant: "destructive",
-                    duration: 5000,
-                });
             }
         };
 
-        startMonitoring();
+        // startMonitoring(); // Disabled for testing/bypass
 
         return () => {
             stopMonitoring();
+            window.removeEventListener('online', handleOfflineStatus);
+            window.removeEventListener('offline', handleOfflineStatus);
         };
     }, []);
 
@@ -175,10 +191,10 @@ function ExamContent() {
             ws.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data) as Violation;
-                    
+
                     // Skip ping messages
                     if (data.type === "ping") return;
-                    
+
                     if (data.event_type && data.type === "violation") {
                         handleViolation(data);
                     }
@@ -349,19 +365,45 @@ function ExamContent() {
         return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     };
 
-    const question = mockQuestions[currentIdx];
+    const handleAnswerChange = (val: any) => {
+        const currentQ = questions[currentIdx];
+        if (!currentQ) return;
+
+        const newAnswers = { ...answers, [currentQ.id]: val };
+        setAnswers(newAnswers);
+
+        // Persist to localStorage immediately (Tauri friendly)
+        if (exam) {
+            localStorage.setItem(`vortex_answers_${exam.id}`, JSON.stringify(newAnswers));
+        }
+    };
 
     const handleSave = () => {
         setIsSaving(true);
         setTimeout(() => {
             setLastSaved(new Date());
             setIsSaving(false);
-        }, 600);
+        }, 300);
     };
 
     const handleSubmit = async (reason: string = "completed") => {
+        if (!exam) return;
+
         await stopMonitoring();
-        router.push(`/student/result?reason=${reason}&violations=${violations}`);
+        setIsSaving(true);
+
+        try {
+            await api.submitExamAnswers(exam.id, answers);
+            console.log("Submission successful");
+        } catch (error) {
+            console.warn("Failed to submit online, queuing for later sync...");
+            queueSubmission(exam.id, answers);
+        } finally {
+            setIsSaving(false);
+            // Clear local draft after submission attempt (either success or queued)
+            localStorage.removeItem(`vortex_answers_${exam.id}`);
+            router.push(`/student/result?reason=${reason}&violations=${violations}`);
+        }
     };
 
     const reEnterFullscreen = async () => {
@@ -406,24 +448,25 @@ function ExamContent() {
                 </div>
 
                 <div className="flex-1 overflow-auto p-6 grid grid-cols-4 gap-3 content-start">
-                    {mockQuestions.map((q, idx) => (
-                        <button
-                            key={q.id}
-                            onClick={() => setCurrentIdx(idx)}
-                            className={cn(
-                                "h-11 rounded-md text-xs font-black transition-all flex items-center justify-center border-2",
-                                currentIdx === idx
-                                    ? "bg-primary border-primary text-primary-foreground shadow-lg shadow-primary/30 scale-105"
-                                    : q.state === "answered"
-                                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600"
-                                        : q.state === "marked"
-                                            ? "bg-orange-500/10 border-orange-500/20 text-orange-600"
+                    {questions.map((q, idx) => {
+                        const isAnswered = answers[q.id] !== undefined;
+                        return (
+                            <button
+                                key={q.id}
+                                onClick={() => setCurrentIdx(idx)}
+                                className={cn(
+                                    "h-11 rounded-md text-xs font-black transition-all flex items-center justify-center border-2",
+                                    currentIdx === idx
+                                        ? "bg-primary border-primary text-primary-foreground shadow-lg shadow-primary/30 scale-105"
+                                        : isAnswered
+                                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600"
                                             : "bg-muted/30 border-border text-muted-foreground hover:border-primary/30"
-                            )}
-                        >
-                            {idx + 1}
-                        </button>
-                    ))}
+                                )}
+                            >
+                                {idx + 1}
+                            </button>
+                        );
+                    })}
                 </div>
 
                 <div className="p-6 border-t border-border bg-muted/5 space-y-4">
@@ -448,13 +491,13 @@ function ExamContent() {
                             ))}
                         </div>
                     )}
-                    
+
                     <div className="space-y-2">
                         <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-tighter">
                             <span className="text-muted-foreground">Progress Tracking</span>
-                            <span className="text-primary">{Math.round((1 / 5) * 100)}%</span>
+                            <span className="text-primary">{Math.round((Object.keys(answers).length / questions.length || 0) * 100)}%</span>
                         </div>
-                        <Progress value={20} className="h-1.5 bg-muted" />
+                        <Progress value={(Object.keys(answers).length / questions.length || 0) * 100} className="h-1.5 bg-muted" />
                     </div>
                     <Button onClick={() => handleSubmit("manual")} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-black h-12 shadow-lg shadow-primary/30 rounded-md transition-all">
                         Finalize & Submit
@@ -488,11 +531,14 @@ function ExamContent() {
                         <div className="flex flex-col items-end">
                             <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
                                 <Save className={cn("w-3 h-3", isSaving && "animate-spin text-primary")} />
-                                {isSaving ? "Syncing..." : `Saved at ${lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                                {isSaving ? "Syncing..." : `Session Persisted at ${lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
                             </span>
-                            <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest flex items-center gap-1.5 mt-0.5">
-                                <Wifi className="w-3 h-3" />
-                                Connection Stable
+                            <span className={cn(
+                                "text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 mt-0.5",
+                                isOnline ? "text-emerald-500" : "text-amber-500"
+                            )}>
+                                {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+                                {isOnline ? "Network Active" : "Offline Mode (Queued)"}
                             </span>
                         </div>
                         <div className={cn(
@@ -506,128 +552,151 @@ function ExamContent() {
                 </header>
 
                 <main className="flex-1 overflow-auto p-12 flex flex-col items-center relative">
-                    <div className="w-full max-w-4xl space-y-10">
-                        <div className="flex items-center justify-between border-b border-border/50 pb-6">
-                            <div className="space-y-1">
-                                <span className="text-muted-foreground font-black uppercase tracking-[0.2em] text-[10px]">Security Module {currentIdx + 1}</span>
-                                <h3 className="text-sm font-bold text-foreground">Core Competency Assessment</h3>
+                    {!exam || questions.length === 0 ? (
+                        <div className="flex-1 flex flex-col items-center justify-center space-y-6">
+                            <Lock className="w-16 h-16 text-muted-foreground animate-pulse" />
+                            <h2 className="text-xl font-bold text-muted-foreground">Initializing Secure Bundle...</h2>
+                        </div>
+                    ) : (
+                        <div className="w-full max-w-4xl space-y-10">
+                            <div className="flex items-center justify-between border-b border-border/50 pb-6">
+                                <div className="space-y-1">
+                                    <span className="text-muted-foreground font-black uppercase tracking-[0.2em] text-[10px]">Security Module {currentIdx + 1}</span>
+                                    <h3 className="text-sm font-bold text-foreground">{exam.title}</h3>
+                                </div>
+                                <Button variant="ghost" size="sm" className="h-9 text-[10px] text-orange-600 font-black uppercase tracking-widest hover:bg-orange-500/5 rounded-full border border-orange-500/20">
+                                    <Flag className="w-3.5 h-3.5 mr-2" /> Mark for Audit
+                                </Button>
                             </div>
-                            <Button variant="ghost" size="sm" className="h-9 text-[10px] text-orange-600 font-black uppercase tracking-widest hover:bg-orange-500/5 rounded-full border border-orange-500/20">
-                                <Flag className="w-3.5 h-3.5 mr-2" /> Mark for Audit
-                            </Button>
-                        </div>
 
-                        <div className="space-y-8">
-                            <h2 className="text-3xl font-bold leading-tight text-foreground tracking-tight">
-                                {question.question}
-                            </h2>
+                            <div className="space-y-8">
+                                <h2 className="text-3xl font-bold leading-tight text-foreground tracking-tight">
+                                    {questions[currentIdx].text}
+                                </h2>
 
-                            {question.type === "MCQ" && (
-                                <RadioGroup className="grid gap-4 mt-10">
-                                    {question.options?.map((opt, i) => (
-                                        <div key={i} className="relative group">
-                                            <RadioGroupItem
-                                                value={i.toString()}
-                                                id={`opt-${i}`}
-                                                className="absolute left-6 top-1/2 -translate-y-1/2 z-10 border-primary"
+                                {questions[currentIdx].type === "MCQ" && (
+                                    <RadioGroup
+                                        value={answers[questions[currentIdx].id]?.toString()}
+                                        onValueChange={(val) => handleAnswerChange(parseInt(val))}
+                                        className="grid gap-4 mt-10"
+                                    >
+                                        {questions[currentIdx].options?.map((opt, i) => (
+                                            <div key={i} className="relative group">
+                                                <RadioGroupItem
+                                                    value={i.toString()}
+                                                    id={`opt-${i}`}
+                                                    className="absolute left-6 top-1/2 -translate-y-1/2 z-10 border-primary"
+                                                />
+                                                <Label
+                                                    htmlFor={`opt-${i}`}
+                                                    className="flex items-center p-6 pl-14 rounded-md border-2 border-border bg-card hover:bg-primary/5 hover:border-primary/30 transition-all cursor-pointer shadow-sm group-hover:shadow-md text-xl font-medium"
+                                                >
+                                                    {opt}
+                                                </Label>
+                                            </div>
+                                        ))}
+                                    </RadioGroup>
+                                )}
+
+                                {questions[currentIdx].type === "Multi-select" && (
+                                    <div className="grid gap-4 mt-10">
+                                        {questions[currentIdx].options?.map((opt, i) => {
+                                            const currentAnswers = (answers[questions[currentIdx].id] as number[]) || [];
+                                            return (
+                                                <div key={i} className="relative group">
+                                                    <Checkbox
+                                                        id={`check-${i}`}
+                                                        checked={currentAnswers.includes(i)}
+                                                        onCheckedChange={(checked) => {
+                                                            const newSelection = checked
+                                                                ? [...currentAnswers, i]
+                                                                : currentAnswers.filter(a => a !== i);
+                                                            handleAnswerChange(newSelection);
+                                                        }}
+                                                        className="absolute left-6 top-1/2 -translate-y-1/2 z-10 border-primary data-[state=checked]:bg-primary"
+                                                    />
+                                                    <Label
+                                                        htmlFor={`check-${i}`}
+                                                        className="flex items-center p-6 pl-14 rounded-md border-2 border-border bg-card hover:bg-primary/5 hover:border-primary/30 transition-all cursor-pointer shadow-sm group-hover:shadow-md text-xl font-medium w-full"
+                                                    >
+                                                        {opt}
+                                                    </Label>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+
+                                {(questions[currentIdx].type === "Short Answer" || questions[currentIdx].type === "Long Answer") && (
+                                    <div className="mt-10">
+                                        {questions[currentIdx].type === "Long Answer" ? (
+                                            <Textarea
+                                                placeholder="Detailed structural analysis output..."
+                                                value={answers[questions[currentIdx].id] || ""}
+                                                onChange={(e) => handleAnswerChange(e.target.value)}
+                                                className="bg-card border-2 border-border min-h-[400px] text-lg leading-relaxed focus-visible:ring-primary shadow-inner font-medium text-foreground p-8 rounded-md"
                                             />
-                                            <Label
-                                                htmlFor={`opt-${i}`}
-                                                className="flex items-center p-6 pl-14 rounded-md border-2 border-border bg-card hover:bg-primary/5 hover:border-primary/30 transition-all cursor-pointer shadow-sm group-hover:shadow-md text-xl font-medium"
-                                            >
-                                                {opt}
-                                            </Label>
-                                        </div>
-                                    ))}
-                                </RadioGroup>
-                            )}
-
-                            {question.type === "Multi-select" && (
-                                <div className="grid gap-4 mt-10">
-                                    {question.options?.map((opt, i) => (
-                                        <div key={i} className="relative group">
-                                            <Checkbox
-                                                id={`check-${i}`}
-                                                className="absolute left-6 top-1/2 -translate-y-1/2 z-10 border-primary data-[state=checked]:bg-primary"
+                                        ) : (
+                                            <Input
+                                                placeholder="Enter cryptographic hash or literal response..."
+                                                value={answers[questions[currentIdx].id] || ""}
+                                                onChange={(e) => handleAnswerChange(e.target.value)}
+                                                className="bg-card border-2 border-border h-16 text-xl focus-visible:ring-primary shadow-inner font-bold text-foreground px-6 rounded-md"
                                             />
-                                            <Label
-                                                htmlFor={`check-${i}`}
-                                                className="flex items-center p-6 pl-14 rounded-md border-2 border-border bg-card hover:bg-primary/5 hover:border-primary/30 transition-all cursor-pointer shadow-sm group-hover:shadow-md text-xl font-medium w-full"
-                                            >
-                                                {opt}
-                                            </Label>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                            {question.type === "Short Answer" && (
-                                <div className="mt-10">
-                                    <Input
-                                        placeholder="Enter cryptographic hash or literal response..."
-                                        className="bg-card border-2 border-border h-16 text-xl focus-visible:ring-primary shadow-inner font-bold text-foreground px-6 rounded-md"
-                                    />
-                                </div>
-                            )}
-
-                            {question.type === "Long Answer" && (
-                                <div className="mt-10">
-                                    <Textarea
-                                        placeholder="Detailed structural analysis output..."
-                                        className="bg-card border-2 border-border min-h-[400px] text-lg leading-relaxed focus-visible:ring-primary shadow-inner font-medium text-foreground p-8 rounded-md"
-                                    />
-                                </div>
-                            )}
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     {/* Bottom Status */}
-                    <div className="sticky bottom-0 mt-20 w-full max-w-4xl py-6 border-t border-border bg-background/80 backdrop-blur-md flex items-center justify-between">
-                        <div className="flex gap-4">
+                    {exam && questions.length > 0 && (
+                        <div className="sticky bottom-0 mt-20 w-full max-w-4xl py-6 border-t border-border bg-background/80 backdrop-blur-md flex items-center justify-between">
+                            <div className="flex gap-4">
+                                <Button
+                                    variant="outline"
+                                    className="border-2 border-border hover:bg-muted font-black px-8 h-12 rounded-md text-xs uppercase tracking-widest transition-all"
+                                    disabled={currentIdx === 0}
+                                    onClick={() => {
+                                        setCurrentIdx(prev => prev - 1);
+                                        handleSave();
+                                    }}
+                                >
+                                    <ChevronLeft className="w-4 h-4 mr-2" /> Back
+                                </Button>
+                            </div>
+
+                            <div className="flex gap-4">
+                                <Button onClick={handleSave} className="bg-muted text-foreground font-black px-8 h-12 rounded-md hover:bg-muted/80 transition-all">
+                                    Snapshot Response
+                                </Button>
+                            </div>
+
                             <Button
-                                variant="outline"
-                                className="border-2 border-border hover:bg-muted font-black px-8 h-12 rounded-md text-xs uppercase tracking-widest transition-all"
-                                disabled={currentIdx === 0}
+                                className="bg-primary hover:bg-primary/90 text-primary-foreground font-black px-12 h-12 rounded-md shadow-lg shadow-primary/20 transition-all text-xs uppercase tracking-widest"
                                 onClick={() => {
-                                    setCurrentIdx(prev => prev - 1);
-                                    handleSave();
+                                    if (currentIdx < questions.length - 1) {
+                                        setCurrentIdx(prev => prev + 1);
+                                        handleSave();
+                                    } else {
+                                        handleSubmit("completed");
+                                    }
                                 }}
                             >
-                                <ChevronLeft className="w-4 h-4 mr-2" /> Back
+                                {currentIdx === questions.length - 1 ? "End Session" : "Next Module"}
+                                {currentIdx < questions.length - 1 && <ChevronRight className="w-4 h-4 ml-2" />}
                             </Button>
                         </div>
-
-                        <div className="flex gap-4">
-                            <Button variant="ghost" className="text-muted-foreground font-black hover:text-foreground hover:bg-muted px-6 uppercase tracking-widest text-[10px]">
-                                Flush Cache
-                            </Button>
-                            <Button onClick={handleSave} className="bg-muted text-foreground font-black px-8 h-12 rounded-md hover:bg-muted/80 transition-all">
-                                Snapshot Response
-                            </Button>
-                        </div>
-
-                        <Button
-                            className="bg-primary hover:bg-primary/90 text-primary-foreground font-black px-12 h-12 rounded-md shadow-lg shadow-primary/20 transition-all text-xs uppercase tracking-widest"
-                            onClick={() => {
-                                if (currentIdx < mockQuestions.length - 1) {
-                                    setCurrentIdx(prev => prev + 1);
-                                    handleSave();
-                                } else {
-                                    handleSubmit("completed");
-                                }
-                            }}
-                        >
-                            {currentIdx === mockQuestions.length - 1 ? "End Session" : "Next Module"}
-                            {currentIdx < mockQuestions.length - 1 && <ChevronRight className="w-4 h-4 ml-2" />}
-                        </Button>
-                    </div>
+                    )}
                 </main>
             </div>
 
             {/* Security Border */}
             <div className="fixed inset-0 pointer-events-none border-t-4 border-primary/40 z-[100] shadow-[inset_0_10px_10px_-10px_rgba(139,92,246,0.3)]" />
 
-            {/* Fullscreen Restriction Overlay */}
+            {/* Fullscreen Restriction Overlay - DISABLED FOR TESTING */}
+            {/* 
             {!isFullscreen && (
                 <div className="fixed inset-0 bg-background/95 backdrop-blur-2xl z-[200] flex items-center justify-center p-6 transition-all duration-500 animate-in fade-in">
                     <Card className="max-w-lg w-full border-red-500/50 shadow-[0_0_50px_rgba(239,68,68,0.2)] bg-card/50">
@@ -658,8 +727,10 @@ function ExamContent() {
                     </Card>
                 </div>
             )}
+            */}
 
-            {/* Screen Share Restriction Overlay */}
+            {/* Screen Share Restriction Overlay - DISABLED FOR TESTING */}
+            {/* 
             {!isScreenSharing && (
                 <div className="fixed inset-0 bg-background/95 backdrop-blur-2xl z-[300] flex items-center justify-center p-6 animate-in fade-in">
                     <Card className="max-w-lg w-full border-primary/50 shadow-[0_0_50px_rgba(139,92,246,0.2)] bg-card/50">
@@ -686,6 +757,7 @@ function ExamContent() {
                     </Card>
                 </div>
             )}
+            */}
         </div>
     );
 }

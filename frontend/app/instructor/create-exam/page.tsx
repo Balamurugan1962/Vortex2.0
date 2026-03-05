@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import * as api from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,8 +44,43 @@ export default function CreateExamPage() {
         setQuestions(questions.filter(q => q.id !== id));
     };
 
-    const handleCreate = () => {
-        setShowShare(true);
+    const [isCreating, setIsCreating] = useState(false);
+    const [accessCode, setAccessCode] = useState("");
+    const [examId, setExamId] = useState<number | null>(null);
+
+    const handleCreate = async () => {
+        const title = (document.getElementById('exam-title') as HTMLInputElement)?.value;
+        const description = (document.getElementById('exam-desc') as HTMLTextAreaElement)?.value;
+        const duration = parseInt((document.getElementById('exam-duration') as HTMLInputElement)?.value || "60");
+        const total_marks = parseInt((document.getElementById('exam-marks') as HTMLInputElement)?.value || "100");
+
+        if (!title) {
+            alert("Please enter an exam title");
+            return;
+        }
+
+        setIsCreating(true);
+        try {
+            const data = await api.createExam({
+                title,
+                description,
+                duration,
+                total_marks,
+                questions: questions.map(q => ({
+                    type: q.type,
+                    text: q.text,
+                    options: q.options,
+                    correctAnswers: q.correctAnswers
+                }))
+            });
+            setAccessCode(data.access_code);
+            setExamId(data.id);
+            setShowShare(true);
+        } catch (error: any) {
+            alert(error.message || "Failed to create exam");
+        } finally {
+            setIsCreating(false);
+        }
     };
 
     const downloadTemplate = () => {
@@ -85,7 +121,13 @@ export default function CreateExamPage() {
                 </div>
                 <div className="flex gap-3">
                     <Button variant="outline" className="border-border hover:bg-muted font-semibold">Save Draft</Button>
-                    <Button onClick={handleCreate} className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-lg shadow-primary/20 transition-all">Create Exam</Button>
+                    <Button
+                        onClick={handleCreate}
+                        className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-lg shadow-primary/20 transition-all"
+                        disabled={isCreating}
+                    >
+                        {isCreating ? "Creating..." : "Create Exam"}
+                    </Button>
                 </div>
             </div>
 
@@ -98,19 +140,19 @@ export default function CreateExamPage() {
                 <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2 md:col-span-2">
                         <Label className="text-foreground font-semibold">Exam Title</Label>
-                        <Input placeholder="e.g., Data Structures & Algorithms - Final" className="bg-background border-border text-foreground" />
+                        <Input id="exam-title" placeholder="e.g., Data Structures & Algorithms - Final" className="bg-background border-border text-foreground" />
                     </div>
                     <div className="space-y-2 md:col-span-2">
                         <Label className="text-foreground font-semibold">Description</Label>
-                        <Textarea placeholder="Provide instructions for students..." className="bg-background border-border min-h-[100px] text-foreground" />
+                        <Textarea id="exam-desc" placeholder="Provide instructions for students..." className="bg-background border-border min-h-[100px] text-foreground" />
                     </div>
                     <div className="space-y-2">
                         <Label className="text-foreground font-semibold">Duration (Minutes)</Label>
-                        <Input type="number" defaultValue="60" className="bg-background border-border text-foreground" />
+                        <Input id="exam-duration" type="number" defaultValue="60" className="bg-background border-border text-foreground" />
                     </div>
                     <div className="space-y-2">
                         <Label className="text-foreground font-semibold">Total Marks</Label>
-                        <Input type="number" defaultValue="100" className="bg-background border-border text-foreground" />
+                        <Input id="exam-marks" type="number" defaultValue="100" className="bg-background border-border text-foreground" />
                     </div>
                     <div className="space-y-2">
                         <Label className="text-foreground font-semibold">Start Time</Label>
@@ -166,7 +208,12 @@ export default function CreateExamPage() {
                             <Input
                                 placeholder="Enter your question here..."
                                 className="bg-background border-border text-foreground font-semibold"
-                                defaultValue={q.text}
+                                value={q.text}
+                                onChange={(e) => {
+                                    const newQuestions = [...questions];
+                                    newQuestions[index].text = e.target.value;
+                                    setQuestions(newQuestions);
+                                }}
                             />
 
                             {(q.type === "MCQ" || q.type === "Multi-select") && (
@@ -180,7 +227,14 @@ export default function CreateExamPage() {
                                             <Input
                                                 placeholder={`Option ${optIndex + 1}`}
                                                 className="bg-background border-border text-foreground h-9"
-                                                defaultValue={opt}
+                                                value={opt}
+                                                onChange={(e) => {
+                                                    const newQuestions = [...questions];
+                                                    if (newQuestions[index].options) {
+                                                        newQuestions[index].options[optIndex] = e.target.value;
+                                                    }
+                                                    setQuestions(newQuestions);
+                                                }}
                                             />
                                             {optIndex > 1 && (
                                                 <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
@@ -277,7 +331,7 @@ export default function CreateExamPage() {
                                 <div className="space-y-3">
                                     <Label className="text-muted-foreground text-[10px] uppercase font-black tracking-widest">Exam Join Code</Label>
                                     <div className="flex gap-2">
-                                        <Input readOnly value="VX-12345" className="bg-muted/30 border-border h-14 text-center font-mono text-2xl tracking-[0.2em] text-primary font-black select-all" />
+                                        <Input readOnly value={accessCode} className="bg-muted/30 border-border h-14 text-center font-mono text-2xl tracking-[0.2em] text-primary font-black select-all" />
                                         <Button size="icon" variant="outline" className="border-border hover:bg-muted h-14 w-14 shrink-0 shadow-sm"><Copy className="h-5 w-5" /></Button>
                                     </div>
                                 </div>
@@ -287,7 +341,7 @@ export default function CreateExamPage() {
                                     <div className="flex gap-2">
                                         <div className="flex-1 bg-muted/30 border border-border rounded-md px-4 h-12 text-sm text-foreground font-bold flex items-center gap-3 overflow-hidden whitespace-nowrap shadow-inner">
                                             <LinkIcon className="w-4 h-4 text-primary shrink-0" />
-                                            offguard.app/join/VX-12345
+                                            offguard.app/join/{accessCode}
                                         </div>
                                         <Button size="icon" variant="outline" className="border-border hover:bg-muted h-12 w-12 shrink-0 shadow-sm"><Copy className="h-4 w-4" /></Button>
                                     </div>

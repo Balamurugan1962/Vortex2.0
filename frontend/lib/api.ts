@@ -148,3 +148,59 @@ export async function deleteUser(id: string | number) {
 
     return await response.json();
 }
+export async function getInstructorExams() {
+    const response = await fetch(`${getBaseApiUrl()}/exams/instructor`, {
+        method: 'GET',
+        headers: authHeaders()
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to fetch exams');
+    }
+
+    return await response.json();
+}
+
+export async function createExam(examData: any) {
+    const response = await fetch(`${getBaseApiUrl()}/exams`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(examData)
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to create exam');
+    }
+
+    return await response.json();
+}
+
+export async function getExamBundle(code: string) {
+    const response = await fetch(`${getBaseApiUrl()}/exams/bundle/${code}`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    });
+
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to download exam package');
+    }
+
+    return await response.json();
+}
+
+export async function submitExamAnswers(examId: number, answers: any) {
+    const response = await fetch(`${getBaseApiUrl()}/exams/submissions`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ exam_id: examId, answers })
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to submit exam');
+    }
+
+    return await response.json();
+}

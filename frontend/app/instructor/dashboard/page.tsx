@@ -7,20 +7,46 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { logout } from "@/lib/api";
 
+import { useState, useEffect } from "react";
+import * as api from "@/lib/api";
+
 const stats = [
-    { label: "Total Exams", value: "12", icon: FileText, color: "text-blue-400" },
-    { label: "Active Exams", value: "3", icon: Clock, color: "text-amber-400" },
-    { label: "Completed", value: "45", icon: CheckCircle2, color: "text-emerald-400" },
-    { label: "Total Students", value: "1.2k", icon: Users, color: "text-purple-400" },
+    { label: "Total Exams", value: "0", icon: FileText, color: "text-blue-400" },
+    { label: "Active Exams", value: "0", icon: Clock, color: "text-amber-400" },
+    { label: "Completed", value: "0", icon: CheckCircle2, color: "text-emerald-400" },
+    { label: "Total Students", value: "0", icon: Users, color: "text-purple-400" },
 ];
 
 export default function InstructorDashboard() {
     const router = useRouter();
+    const [exams, setExams] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchExams = async () => {
+            try {
+                const data = await api.getInstructorExams();
+                setExams(data);
+            } catch (error) {
+                console.error("Failed to fetch exams", error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchExams();
+    }, []);
 
     const handleLogout = () => {
-        logout();
+        api.logout();
         router.push("/login");
     };
+
+    const dashboardStats = [
+        { label: "Total Exams", value: exams.length.toString(), icon: FileText, color: "text-blue-400" },
+        { label: "Active Exams", value: exams.length > 0 ? "1" : "0", icon: Clock, color: "text-amber-400" },
+        { label: "Completed", value: "0", icon: CheckCircle2, color: "text-emerald-400" },
+        { label: "Total Students", value: "0", icon: Users, color: "text-purple-400" },
+    ];
 
     return (
         <div className="p-8 space-y-8">
@@ -43,7 +69,7 @@ export default function InstructorDashboard() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {stats.map((stat) => (
+                {dashboardStats.map((stat) => (
                     <Card key={stat.label} className="bg-card border-border shadow-sm">
                         <CardHeader className="flex flex-row items-center justify-between pb-2">
                             <CardTitle className="text-sm font-medium text-muted-foreground">{stat.label}</CardTitle>
@@ -64,20 +90,26 @@ export default function InstructorDashboard() {
                     </CardHeader>
                     <CardContent>
                         <div className="space-y-4">
-                            {[1, 2, 3].map((i) => (
-                                <div key={i} className="flex items-center justify-between p-4 rounded-md bg-muted/20 border border-border/50 hover:bg-muted/40 transition-all cursor-pointer group">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center text-primary font-bold">
-                                            {i}
+                            {isLoading ? (
+                                <p className="text-center text-muted-foreground py-8">Loading exams...</p>
+                            ) : exams.length === 0 ? (
+                                <p className="text-center text-muted-foreground py-8">No exams created yet.</p>
+                            ) : (
+                                exams.map((exam) => (
+                                    <div key={exam.id} className="flex items-center justify-between p-4 rounded-md bg-muted/20 border border-border/50 hover:bg-muted/40 transition-all cursor-pointer group">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center text-primary font-bold">
+                                                {exam.access_code.slice(-1)}
+                                            </div>
+                                            <div>
+                                                <div className="font-semibold text-foreground">{exam.title}</div>
+                                                <div className="text-sm text-muted-foreground">Code: <span className="font-mono text-primary font-bold">{exam.access_code}</span> • {exam.duration} mins</div>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <div className="font-semibold text-foreground">Mid-term Computer Science {i}</div>
-                                            <div className="text-sm text-muted-foreground">Scheduled: 24th March, 2024</div>
-                                        </div>
+                                        <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
                                     </div>
-                                    <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                                </div>
-                            ))}
+                                ))
+                            )}
                         </div>
                     </CardContent>
                 </Card>
