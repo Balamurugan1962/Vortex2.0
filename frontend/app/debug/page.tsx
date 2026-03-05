@@ -7,23 +7,37 @@ import { invoke } from "@tauri-apps/api/core";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Monitor, MonitorOff, AlertTriangle, Camera, EyeOff, Video, VideoOff } from "lucide-react";
+import {
+  ArrowLeft,
+  Monitor,
+  MonitorOff,
+  AlertTriangle,
+  Camera,
+  VideoOff,
+  Users,
+  Smartphone,
+  Search,
+  ExternalLink,
+  ShieldAlert
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { getScreenshotableMonitors, getMonitorScreenshot } from "tauri-plugin-screenshots-api";
 
 export default function DebugPage() {
   const router = useRouter();
-  const [mirrorStatus, setMirrorStatus] = useState<"unknown" | "mirrored" | "safe">("unknown");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
+  const lastFocusTime = useRef<number>(0);
 
   // Process State
   const [processes, setProcesses] = useState<any[]>([]);
   const [processSearch, setProcessSearch] = useState("");
   const [processLoading, setProcessLoading] = useState(false);
 
-  // Camera State
+  // Mirror State
+  const [mirrorStatus, setMirrorStatus] = useState<"unknown" | "safe" | "mirrored">("unknown");
+  const [mirrorLoading, setMirrorLoading] = useState(false);
+
+  // Camera & AI State
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const modelRef = useRef<cocoSsd.ObjectDetection | null>(null);
@@ -31,19 +45,20 @@ export default function DebugPage() {
 
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
-
-  // AI State
   const [modelLoaded, setModelLoaded] = useState(false);
   const [personCount, setPersonCount] = useState(0);
   const [phoneDetected, setPhoneDetected] = useState(false);
 
-  // Load Model Once
+  // Screenshot State
+  const [screenshotData, setScreenshotData] = useState<string | null>(null);
+  const [screenshotLoading, setScreenshotLoading] = useState(false);
+
+  // Load AI Model
   useEffect(() => {
     const loadModel = async () => {
       try {
         await tf.ready();
-        const model = await cocoSsd.load();
-        modelRef.current = model;
+        modelRef.current = await cocoSsd.load();
         setModelLoaded(true);
       } catch (err) {
         console.error("Failed to load COCO-SSD model", err);
@@ -52,29 +67,27 @@ export default function DebugPage() {
     loadModel();
   }, []);
 
+  // Listen for Window Blur
   useEffect(() => {
-    let unlistenPromise: Promise<() => void> | null = null;
+    let unlisten: (() => void) | null = null;
 
-    const setupListener = () => {
-      try {
-        const appWindow = getCurrentWindow();
-        unlistenPromise = appWindow.onFocusChanged(({ payload: focused }) => {
-          if (!focused) {
-            setTabSwitchCount((prev) => prev + 1);
-          }
-        });
-      } catch (err) {
-        console.error("Failed to setup blur listener", err);
-      }
+    const setupListener = async () => {
+      const appWindow = getCurrentWindow();
+      unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
+        // Debounce: prevent multiple triggers within 500ms
+        const now = Date.now();
+        if (!focused && (now - lastFocusTime.current > 500)) {
+          setTabSwitchCount(prev => prev + 1);
+          lastFocusTime.current = now;
+        }
+      });
     };
 
     setupListener();
     refreshProcesses();
 
     return () => {
-      if (unlistenPromise) {
-        unlistenPromise.then((unlisten) => unlisten()).catch(console.error);
-      }
+      if (unlisten) unlisten();
       stopCamera();
     };
   }, []);
@@ -83,11 +96,7 @@ export default function DebugPage() {
     setProcessLoading(true);
     try {
       const list = await invoke<any[]>("get_running_apps");
-      // Filter out processes with empty names and sort by CPU usage
-      const filtered = list
-        .filter(p => p.name.trim() !== "")
-        .sort((a, b) => b.cpu_usage - a.cpu_usage);
-      setProcesses(filtered);
+      setProcesses(list.sort((a, b) => b.cpu_usage - a.cpu_usage));
     } catch (err) {
       console.error("Failed to fetch processes:", err);
     } finally {
@@ -95,13 +104,24 @@ export default function DebugPage() {
     }
   };
 
+  const testMirroring = async () => {
+    setMirrorLoading(true);
+    try {
+      const isMirrored = await invoke<boolean>("check_screen_mirroring");
+      setMirrorStatus(isMirrored ? "mirrored" : "safe");
+    } catch (err) {
+      console.error("Mirror check failed:", err);
+      setMirrorStatus("unknown");
+    } finally {
+      setMirrorLoading(false);
+    }
+  };
+
   const closeProcess = async (pid: number) => {
     try {
       await invoke("kill_process", { pid });
-      setTimeout(refreshProcesses, 500); // Refresh after a short delay
-    } catch (err) {
-      console.error("Failed to kill process:", err);
-    }
+      setTimeout(refreshProcesses, 500);
+    } catch (err) { console.error(err); }
   };
 
   const startCamera = async () => {
@@ -111,427 +131,263 @@ export default function DebugPage() {
       if (videoRef.current) {
         setIsCameraActive(true);
         videoRef.current.srcObject = stream;
-        // Start detection loop once video starts playing
-        videoRef.current.onloadeddata = () => {
-          detectFrame();
-        };
+        videoRef.current.onloadeddata = () => detectFrame();
       }
     } catch (err: any) {
-      setCameraError(err?.message || "Failed to access webcam. Please check permissions.");
+      setCameraError(err?.message || "Camera access failed.");
     }
   };
 
   const detectFrame = async () => {
     if (!videoRef.current || !canvasRef.current || !modelRef.current) return;
-
     const video = videoRef.current;
     if (video.readyState === 4) {
-      // Get inferences
       const predictions = await modelRef.current.detect(video);
-
-      // Process predictions
-      let tempPersonCount = 0;
-      let tempPhoneDetected = false;
+      let pCount = 0;
+      let phone = false;
 
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
-
       if (ctx) {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Ensure styling matches flipped CSS scaling
+        ctx.strokeStyle = "#22c55e";
+        ctx.lineWidth = 4;
         ctx.font = "16px sans-serif";
-        ctx.textBaseline = "top";
 
-        predictions.forEach((prediction) => {
-          if (prediction.class !== "person" && prediction.class !== "cell phone") return;
+        predictions.forEach(p => {
+          if (p.class === "person") pCount++;
+          if (p.class === "cell phone") phone = true;
 
-          const [x, y, width, height] = prediction.bbox;
-
-          if (prediction.class === "person") tempPersonCount++;
-          if (prediction.class === "cell phone") tempPhoneDetected = true;
-
-          // Draw Bounding Box (Consistent safe color for recognized objects)
-          const color = "#22c55e";
-
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 4;
-          // IMPORTANT: Because our video element has scale-x-[-1] (CSS flip), 
-          // the canvas coordinates do NOT match visual space unless we draw normally and flip the canvas via CSS too.
-          ctx.strokeRect(x, y, width, height);
-
-          // Draw Label Background
-          ctx.fillStyle = color;
-          const textWidth = ctx.measureText(prediction.class).width;
-          const textHeight = 24;
-          ctx.fillRect(x, y, textWidth + 8, textHeight);
-
-          // Draw Label Text
-          ctx.fillStyle = "#FFFFFF";
-          ctx.fillText(`${prediction.class} (${Math.round(prediction.score * 100)}%)`, x + 4, y + 4);
+          if (p.class === "person" || p.class === "cell phone") {
+            const [x, y, w, h] = p.bbox;
+            ctx.strokeRect(x, y, w, h);
+            ctx.fillStyle = "#22c55e";
+            ctx.fillRect(x, y, ctx.measureText(p.class).width + 10, 25);
+            ctx.fillStyle = "white";
+            ctx.fillText(p.class, x + 5, y + 18);
+          }
         });
       }
-
-      setPersonCount(tempPersonCount);
-      setPhoneDetected(tempPhoneDetected);
+      setPersonCount(pCount);
+      setPhoneDetected(phone);
     }
-
-    // Continue loop
     animationFrameRef.current = requestAnimationFrame(detectFrame);
   };
 
   const stopCamera = () => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-    }
-
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
+    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    if (videoRef.current?.srcObject) {
+      (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
       videoRef.current.srcObject = null;
       setIsCameraActive(false);
-      setPersonCount(0);
-      setPhoneDetected(false);
-
-      // Clear canvas
-      if (canvasRef.current) {
-        const ctx = canvasRef.current.getContext("2d");
-        if (ctx) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-      }
     }
   };
 
-  const testMirroring = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const isMirrored = await invoke<boolean>("check_screen_mirroring");
-      if (isMirrored) {
-        setMirrorStatus("mirrored");
-      } else {
-        setMirrorStatus("safe");
-      }
-    } catch (err: any) {
-      setError(err?.toString() || "An unknown error occurred");
-      setMirrorStatus("unknown");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const [screenshotData, setScreenshotData] = useState<string | null>(null);
-  const [screenshotLoading, setScreenshotLoading] = useState(false);
-  const [screenshotError, setScreenshotError] = useState<string | null>(null);
-
-  const testScreenshot = async () => {
+  const captureScreenshot = async () => {
     setScreenshotLoading(true);
-    setScreenshotError(null);
     try {
       const monitors = await getScreenshotableMonitors();
-      if (!monitors || monitors.length === 0) {
-        throw new Error("No primary monitor detected for screenshot.");
-      }
-
-      // Capture the first monitor (usually primary)
-      const monitorId = monitors[0].id;
-      const responsePath = await getMonitorScreenshot(monitorId);
-
-      // The plugin returns a local file system path to the saved PNG.
-      // We must convert it into an asset protocol URL for the WebView to render it.
-      if (typeof responsePath === "string") {
-        const uint8Arr = await readFile(responsePath);
-
-        // Convert Uint8Array to base64
+      if (monitors?.length > 0) {
+        const path = await getMonitorScreenshot(monitors[0].id);
+        const uint8Arr = await readFile(path);
         let binary = '';
-        const len = uint8Arr.byteLength;
-        for (let i = 0; i < len; i++) {
-          binary += String.fromCharCode(uint8Arr[i]);
-        }
-        const base64Data = window.btoa(binary);
-
-        setScreenshotData(`data:image/png;base64,${base64Data}`);
-      } else {
-        throw new Error("Invalid response from screenshot plugin: expected string path.");
+        for (let i = 0; i < uint8Arr.length; i++) binary += String.fromCharCode(uint8Arr[i]);
+        setScreenshotData(`data:image/png;base64,${window.btoa(binary)}`);
       }
-
-    } catch (err: any) {
-      setScreenshotError(err?.toString() || "An unknown error occurred while capturing screen.");
-    } finally {
-      setScreenshotLoading(false);
-    }
+    } catch (err) { console.error(err); }
+    finally { setScreenshotLoading(false); }
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background text-foreground p-6 relative overflow-hidden">
-      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-primary/5 via-background to-background pointer-events-none" />
-
-      <div className="w-full max-w-md relative z-10 space-y-8 animate-in fade-in zoom-in duration-500">
-        <Button
-          variant="ghost"
-          onClick={() => router.push("/")}
-          className="absolute -top-12 left-0 text-muted-foreground hover:text-foreground hover:bg-muted/20"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Home
-        </Button>
-
-        <div className="text-center space-y-2">
-          <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4 border border-border">
-            <AlertTriangle className="w-8 h-8 text-muted-foreground" />
+    <div className="min-h-screen bg-background p-4 md:p-8 text-foreground">
+      <div className="max-w-[1440px] mx-auto space-y-8">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border pb-8">
+          <div>
+            <h1 className="text-5xl font-black tracking-tighter mb-2 uppercase">Debug</h1>
           </div>
-          <h1 className="text-3xl font-black tracking-tight text-foreground">Debug Tools</h1>
-          <p className="text-muted-foreground text-sm">Test system capabilities and security features</p>
+          <Button variant="outline" size="lg" onClick={() => router.push('/')} className="rounded-full px-8 border-2 font-bold hover:bg-foreground hover:text-background transition-all">
+            <ArrowLeft className="w-4 h-4 mr-2" /> EXIT DEBUG
+          </Button>
         </div>
 
-        <div className="bg-card border border-border rounded-xl p-8 shadow-xl space-y-6">
-          <div className="space-y-4">
-            <h2 className="text-xl font-bold border-b border-border pb-2">Screen Mirroring Test</h2>
-            <p className="text-sm text-muted-foreground">
-              This tests the native macOS CoreGraphics API to detect physical or software (AirPlay/Sidecar) display mirroring.
-            </p>
-
-            <div className="flex flex-col gap-4 pt-2">
-              <Button
-                onClick={testMirroring}
-                disabled={loading}
-                className="w-full font-bold h-12"
-              >
-                {loading ? "Checking..." : "Check Mirroring Status"}
-              </Button>
-
-              <div className="mt-4 p-4 rounded-lg bg-muted/50 border border-border min-h-[100px] flex items-center justify-center">
-                {error ? (
-                  <div className="text-destructive text-sm text-center font-mono">
-                    Error: {error}
-                  </div>
-                ) : mirrorStatus === "mirrored" ? (
-                  <div className="flex flex-col items-center gap-2 text-destructive font-bold text-center">
-                    <Monitor className="w-8 h-8 animate-pulse" />
-                    <span>MIRRORING DETECTED!</span>
-                  </div>
-                ) : mirrorStatus === "safe" ? (
-                  <div className="flex flex-col items-center gap-2 text-green-500 font-bold text-center">
-                    <MonitorOff className="w-8 h-8" />
-                    <span>No Mirroring Detected. Safe.</span>
-                  </div>
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+          {/* Main Column */}
+          <div className="xl:col-span-8 space-y-8">
+            {/* Live Feed Card */}
+            <div className="bg-card rounded-3xl border border-border shadow-2xl overflow-hidden relative group">
+              <div className="p-6 border-b border-border flex items-center justify-between bg-muted/20">
+                <div className="flex items-center gap-3">
+                  <div className={`w-3 h-3 rounded-full ${isCameraActive ? 'bg-green-500 animate-pulse' : 'bg-muted'}`} />
+                  <h2 className="text-xl font-bold uppercase tracking-tight">AI Vision Feed</h2>
+                </div>
+                {!isCameraActive ? (
+                  <Button onClick={startCamera} disabled={!modelLoaded} className="bg-primary hover:bg-primary/90 rounded-full px-6 font-bold shadow-lg shadow-primary/20">
+                    <Camera className="w-4 h-4 mr-2" /> {!modelLoaded ? "LOADING MODEL..." : "ACTIVATE"}
+                  </Button>
                 ) : (
-                  <div className="text-muted-foreground text-sm font-mono opacity-50">
-                    Awaiting test execution...
-                  </div>
+                  <Button onClick={stopCamera} variant="destructive" className="rounded-full px-6 font-bold">
+                    <VideoOff className="w-4 h-4 mr-2" /> DEACTIVATE
+                  </Button>
                 )}
               </div>
-            </div>
-          </div>
 
-          <div className="space-y-4 pt-4 mt-6 border-t border-border">
-            <h2 className="text-xl font-bold border-b border-border pb-2">Running Applications</h2>
-            <p className="text-sm text-muted-foreground">
-              Monitor and close other running applications on this system.
-            </p>
-
-            <div className="flex flex-col gap-4 pt-2">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Filter by name..."
-                  className="flex-1 bg-muted/50 border border-border rounded-lg px-4 h-11 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                  value={processSearch}
-                  onChange={(e) => setProcessSearch(e.target.value)}
-                />
-                <Button
-                  onClick={refreshProcesses}
-                  disabled={processLoading}
-                  variant="secondary"
-                  className="h-11 px-6 font-bold"
-                >
-                  {processLoading ? "Refreshing..." : "Refresh List"}
-                </Button>
-              </div>
-
-              <div className="border border-border rounded-lg overflow-hidden bg-muted/20">
-                <div className="max-h-[400px] overflow-y-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-muted/50 text-muted-foreground font-medium sticky top-0">
-                      <tr>
-                        <th className="px-4 py-3">Name</th>
-                        <th className="px-4 py-3 text-right">PID</th>
-                        <th className="px-4 py-3 text-right">CPU %</th>
-                        <th className="px-4 py-3 text-right">Mem (MB)</th>
-                        <th className="px-4 py-3 text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {processes
-                        .filter(p => !processSearch || p.name.toLowerCase().includes(processSearch.toLowerCase()))
-                        .slice(0, 50) // Limit to top 50
-                        .map((p) => (
-                          <tr key={p.pid} className="hover:bg-muted/10 transition-colors">
-                            <td className="px-4 py-3 font-medium truncate max-w-[150px]">{p.name}</td>
-                            <td className="px-4 py-3 text-right font-mono text-xs">{p.pid}</td>
-                            <td className="px-4 py-3 text-right">{p.cpu_usage.toFixed(1)}%</td>
-                            <td className="px-4 py-3 text-right">{(p.memory_usage / 1024 / 1024).toFixed(0)}</td>
-                            <td className="px-4 py-3 text-right">
-                              {/* Don't allow killing itself or critical system things if we can identify them */}
-                              <Button
-                                onClick={() => closeProcess(p.pid)}
-                                size="sm"
-                                variant="destructive"
-                                className="h-7 text-[10px] px-2 font-bold"
-                              >
-                                CLOSE
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                  {processes.length === 0 && (
-                    <div className="p-8 text-center text-muted-foreground italic">
-                      No applications found or awaiting refresh...
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4 pt-4 mt-6 border-t border-border">
-            <h2 className="text-xl font-bold border-b border-border pb-2">Active Tab Switch / Focus Tracker</h2>
-            <p className="text-sm text-muted-foreground">
-              This measures how many times the user switches away from the application window (alt-tabs or clicks elsewhere).
-            </p>
-
-            <div className="flex flex-col gap-4 pt-2">
-              <div className="p-6 rounded-lg bg-orange-500/10 border border-orange-500/20 flex flex-col items-center justify-center space-y-2">
-                <EyeOff className="w-10 h-10 text-orange-500 animate-pulse" />
-                <div className="text-5xl font-black text-foreground">
-                  {tabSwitchCount}
-                </div>
-                <div className="text-sm font-bold text-orange-500 uppercase tracking-widest">
-                  Window focus lost
-                </div>
-              </div>
-              <Button
-                onClick={() => setTabSwitchCount(0)}
-                variant="outline"
-                className="w-full text-xs"
-              >
-                Reset Counter
-              </Button>
-            </div>
-          </div>
-
-          <div className="space-y-4 pt-4 mt-6 border-t border-border">
-            <h2 className="text-xl font-bold border-b border-border pb-2">Full Screen Capture Test</h2>
-            <p className="text-sm text-muted-foreground">
-              This tests the native Tauri screenshot capability, forcing a full capture of the primary monitor without browser prompts.
-            </p>
-
-            <div className="flex flex-col gap-4 pt-2">
-              <Button
-                onClick={testScreenshot}
-                disabled={screenshotLoading}
-                variant="secondary"
-                className="w-full font-bold h-12"
-              >
-                {screenshotLoading ? "Capturing..." : "Capture Entire Screen"}
-              </Button>
-
-              <div className="mt-4 p-4 rounded-lg bg-muted/50 border border-border min-h-[100px] flex flex-col items-center justify-center">
-                {screenshotError ? (
-                  <div className="text-destructive text-sm text-center font-mono">
-                    Error: {screenshotError}
-                  </div>
-                ) : screenshotData ? (
-                  <div className="flex flex-col items-center gap-3 w-full">
-                    <div className="flex items-center gap-2 text-green-500 font-bold text-center text-sm">
-                      <Camera className="w-4 h-4" />
-                      <span>Capture Successful</span>
-                    </div>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={screenshotData}
-                      alt="Captured Screen"
-                      className="w-full max-h-[300px] object-contain rounded border border-border mt-2 bg-black"
-                    />
-                  </div>
-                ) : (
-                  <div className="text-muted-foreground text-sm font-mono opacity-50">
-                    Awaiting capture...
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4 pt-4 mt-6 border-t border-border">
-            <h2 className="text-xl font-bold border-b border-border pb-2">Live Webcam Feed</h2>
-            <p className="text-sm text-muted-foreground">
-              This tests local HTML5 WebRTC `getUserMedia` to verify the application has camera access and handles streaming correctly.
-            </p>
-
-            <div className="flex flex-col gap-4 pt-2">
-              <div className="relative w-full aspect-video bg-black rounded-lg border border-border overflow-hidden flex items-center justify-center">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  style={{ display: isCameraActive ? "block" : "none" }}
-                  className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
-                />
-                <canvas
-                  ref={canvasRef}
-                  style={{ display: isCameraActive ? "block" : "none" }}
-                  className="absolute inset-0 w-full h-full object-cover pointer-events-none scale-x-[-1]"
-                />
+              <div className="aspect-video bg-black relative">
+                <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover scale-x-[-1]" style={{ display: isCameraActive ? 'block' : 'none' }} />
+                <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none scale-x-[-1]" style={{ display: isCameraActive ? 'block' : 'none' }} />
 
                 {!isCameraActive && (
-                  <div className="flex flex-col items-center gap-2 text-muted-foreground opacity-50">
-                    <VideoOff className="w-12 h-12" />
-                    <span className="text-sm font-bold uppercase tracking-widest">Camera Offline</span>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center space-y-4">
+                    <div className="w-20 h-20 rounded-full bg-muted/10 flex items-center justify-center border border-white/5">
+                      <Camera className="w-10 h-10 text-muted-foreground" />
+                    </div>
+                    <p className="text-muted-foreground font-mono text-sm uppercase tracking-widest opacity-50">Camera Standby</p>
                   </div>
                 )}
 
-                {cameraError && !isCameraActive && (
-                  <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-4 z-10">
-                    <span className="text-destructive font-mono text-center text-sm">{cameraError}</span>
+                {cameraError && (
+                  <div className="absolute inset-0 bg-destructive/10 backdrop-blur-sm flex items-center justify-center">
+                    <div className="bg-background/80 p-4 rounded-xl border border-destructive text-destructive font-bold flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5" /> {cameraError}
+                    </div>
                   </div>
                 )}
               </div>
 
-              {/* AI Detection Violations Flags */}
-              <div className="flex flex-col gap-2">
-                <div className={`flex items-center gap-3 p-3 rounded border font-bold ${personCount > 1 ? "bg-destructive/10 border-destructive text-destructive" : "bg-muted border-border text-muted-foreground"}`}>
-                  <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-                  {personCount > 1 ? `Multiple People Detected! (${personCount})` : `Person Detection (Subject Only): Safe (${personCount})`}
+              {/* Status Footer */}
+              <div className="grid grid-cols-2 bg-muted/10">
+                <div className={`p-8 border-r border-border flex items-center justify-between transition-colors ${personCount > 1 ? 'bg-destructive/10' : ''}`}>
+                  <div className="space-y-1">
+                    <p className="text-xs font-bold text-muted-foreground uppercase opacity-60">Occupancy</p>
+                    <p className={`text-4xl font-black ${personCount > 1 ? 'text-destructive' : ''}`}>{personCount} PERS</p>
+                  </div>
+                  <Users className={`w-8 h-8 ${personCount > 1 ? 'text-destructive' : 'text-primary'}`} />
                 </div>
-                <div className={`flex items-center gap-3 p-3 rounded border font-bold ${phoneDetected ? "bg-destructive/10 border-destructive text-destructive" : "bg-muted border-border text-muted-foreground"}`}>
-                  <Camera className="w-5 h-5 flex-shrink-0" />
-                  {phoneDetected ? "Mobile Phone Detected in Frame!" : "No Phones Detected: Safe"}
+                <div className={`p-8 flex items-center justify-between transition-colors ${phoneDetected ? 'bg-destructive/10' : ''}`}>
+                  <div className="space-y-1">
+                    <p className="text-xs font-bold text-muted-foreground uppercase opacity-60">Security</p>
+                    <p className={`text-4xl font-black ${phoneDetected ? 'text-destructive' : ''}`}>{phoneDetected ? 'ALERT' : 'CLEAN'}</p>
+                  </div>
+                  <Smartphone className={`w-8 h-8 ${phoneDetected ? 'text-destructive animate-bounce' : 'text-primary'}`} />
                 </div>
               </div>
+            </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <Button
-                  onClick={startCamera}
-                  disabled={isCameraActive || !modelLoaded}
-                  variant="secondary"
-                  className="w-full font-bold h-12 bg-green-500/10 text-green-500 hover:bg-green-500/20 hover:text-green-400"
-                >
-                  <Video className="w-4 h-4 mr-2" />
-                  {!modelLoaded ? "Loading AI Model..." : "Start Camera"}
+            {/* Screenshot Card */}
+            <div className="bg-card rounded-3xl border border-border shadow-xl overflow-hidden">
+              <div className="p-6 border-b border-border flex items-center justify-between">
+                <h2 className="text-xl font-bold uppercase tracking-tight">External Monitor Capture</h2>
+                <Button onClick={captureScreenshot} disabled={screenshotLoading} variant="outline" className="rounded-full font-bold">
+                  {screenshotLoading ? "CAPTURING..." : "CAPTURE LOG"}
                 </Button>
-                <Button
-                  onClick={stopCamera}
-                  disabled={!isCameraActive}
-                  variant="outline"
-                  className="w-full font-bold h-12 border-destructive/20 text-destructive hover:bg-destructive/10"
-                >
-                  <VideoOff className="w-4 h-4 mr-2" />
-                  Stop Camera
+              </div>
+              <div className="p-6">
+                {screenshotData ? (
+                  <div className="rounded-xl overflow-hidden border border-border shadow-inner bg-black">
+                    <img src={screenshotData} alt="Diagnostic" className="w-full h-auto max-h-[500px] object-contain" />
+                  </div>
+                ) : (
+                  <div className="h-[200px] rounded-xl border-2 border-dashed border-border flex items-center justify-center text-muted-foreground font-mono text-sm uppercase tracking-widest opacity-50">
+                    Awaiting diagnostic trigger
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column */}
+          <div className="xl:col-span-4 space-y-8">
+            {/* App List Card */}
+            <div className="bg-card rounded-3xl border border-border shadow-xl h-[500px] flex flex-col">
+              <div className="p-6 border-b border-border">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-bold uppercase tracking-tight">Restricted Apps</h2>
+                  <Button onClick={refreshProcesses} disabled={processLoading} size="sm" variant="ghost" className="h-8 w-8 p-0 rounded-full hover:bg-muted">
+                    <Monitor className={`w-4 h-4 ${processLoading ? 'animate-spin' : ''}`} />
+                  </Button>
+                </div>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <input
+                    value={processSearch}
+                    onChange={e => setProcessSearch(e.target.value)}
+                    placeholder="SEARCHING PROCESSES..."
+                    className="w-full bg-muted/40 border-none rounded-2xl h-12 pl-10 pr-4 text-sm font-mono focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+                {processes
+                  .filter(p => !processSearch || p.name.toLowerCase().includes(processSearch.toLowerCase()))
+                  .map(p => (
+                    <div key={p.pid} className="flex items-center justify-between p-4 hover:bg-muted/30 rounded-2xl transition-all border border-transparent hover:border-border">
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <div className="w-10 h-10 flex-shrink-0 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-bold">
+                          {p.name[0]?.toUpperCase() || '?'}
+                        </div>
+                        <div className="overflow-hidden">
+                          <p className="text-sm font-bold truncate">{p.name}</p>
+                          <p className="text-[10px] font-mono text-muted-foreground opacity-50">PID: {p.pid}</p>
+                        </div>
+                      </div>
+                      <Button onClick={() => closeProcess(p.pid)} variant="destructive" size="sm" className="h-8 rounded-full text-[10px] font-black px-4 flex-shrink-0">
+                        KILL
+                      </Button>
+                    </div>
+                  ))}
+                {processes.length === 0 && (
+                  <div className="py-20 text-center space-y-4 opacity-30">
+                    <ShieldAlert className="w-12 h-12 mx-auto" />
+                    <p className="text-xs font-mono uppercase tracking-widest text-center">Environment Secured</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Mirroring Diagnostic Card */}
+            <div className="bg-card rounded-3xl border border-border shadow-xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold uppercase tracking-tight">Mirror Status</h2>
+                <Button onClick={testMirroring} disabled={mirrorLoading} variant="outline" size="sm" className="rounded-full font-bold">
+                  {mirrorLoading ? "CHECKING..." : "CHECK MIRRORING"}
+                </Button>
+              </div>
+              <div className={`p-4 rounded-2xl border flex items-center gap-4 transition-all ${mirrorStatus === "mirrored" ? "bg-destructive/10 border-destructive" :
+                mirrorStatus === "safe" ? "bg-green-500/10 border-green-500/50" : "bg-muted/50 border-border"
+                }`}>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${mirrorStatus === "mirrored" ? "bg-destructive text-white" :
+                  mirrorStatus === "safe" ? "bg-green-500 text-white" : "bg-muted text-muted-foreground"
+                  }`}>
+                  {mirrorStatus === "mirrored" ? <MonitorOff className="w-6 h-6" /> : <Monitor className="w-6 h-6" />}
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-muted-foreground uppercase opacity-60 tracking-widest">Diagnostic Result</p>
+                  <p className={`text-xl font-black uppercase ${mirrorStatus === "mirrored" ? "text-destructive" :
+                    mirrorStatus === "safe" ? "text-green-500" : ""
+                    }`}>
+                    {mirrorStatus === "mirrored" ? "MIRRORED" : mirrorStatus === "safe" ? "NO MIRROR" : "UNKNOWN"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Focus Tracker Card */}
+            <div className="bg-primary rounded-3xl p-8 text-primary-foreground shadow-2xl shadow-primary/30 relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-3xl opacity-50" />
+              <div className="relative z-10 flex flex-col h-full justify-between">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold uppercase tracking-widest text-xs opacity-70">Focus Violations</h3>
+                  <ExternalLink className="w-4 h-4 opacity-50" />
+                </div>
+                <div className="py-10">
+                  <span className="text-8xl font-black tabular-nums tracking-tighter leading-none">{tabSwitchCount}</span>
+                  <p className="mt-4 text-sm font-medium opacity-80 leading-relaxed">System recorded window focus changes during active session mode.</p>
+                </div>
+                <Button onClick={() => setTabSwitchCount(0)} variant="secondary" className="bg-white/10 hover:bg-white/20 border-white/10 text-white rounded-full font-bold h-12">
+                  RESET COUNTER
                 </Button>
               </div>
             </div>
