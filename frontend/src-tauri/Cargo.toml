@@ -34,3 +34,6 @@ sysinfo = "0.33"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.25.0"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.59.0", features = ["Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
