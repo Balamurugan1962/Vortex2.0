@@ -75,7 +75,7 @@ export default function StudentConnectPage() {
                                     </div>
                                     <Input
                                         id="url"
-                                        placeholder="https://vortex-exam.app/join/..."
+                                        placeholder="https://offguard.app/join/..."
                                         className="bg-background border-border flex-1 text-foreground font-medium h-12"
                                         value={examUrl}
                                         onChange={(e) => setExamUrl(e.target.value)}

@@ -30,16 +30,89 @@ export default function PermissionsPage() {
 
     const [checking, setChecking] = useState(false);
 
-    const requestPermission = (id: string) => {
+    useEffect(() => {
+        const syncPermissions = async () => {
+            const types = ["camera" as PermissionName, "microphone" as PermissionName, "geolocation" as PermissionName];
+
+            for (const type of types) {
+                try {
+                    const status = await navigator.permissions.query({ name: type });
+                    const id = type === "microphone" ? "mic" : type === "camera" ? "camera" : "location";
+
+                    if (status.state === "granted") {
+                        setPermissions(prev => prev.map(p =>
+                            p.id === id ? { ...p, status: "granted" } : p
+                        ));
+                    }
+
+                    status.onchange = () => {
+                        setPermissions(prev => prev.map(p =>
+                            p.id === id ? { ...p, status: status.state === "granted" ? "granted" : "pending" } : p
+                        ));
+                    };
+                } catch (e) {
+                    console.warn(`Browser doesn't support direct permission query for ${type}`);
+                }
+            }
+        };
+
+        syncPermissions();
+    }, []);
+
+    const checkPermissionStatus = async (id: string): Promise<boolean> => {
+        try {
+            switch (id) {
+                case "camera":
+                    const camStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    camStream.getTracks().forEach(track => track.stop());
+                    return true;
+                case "mic":
+                    const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    micStream.getTracks().forEach(track => track.stop());
+                    return true;
+                case "location":
+                    return new Promise((resolve) => {
+                        navigator.geolocation.getCurrentPosition(() => resolve(true), () => resolve(false));
+                    });
+                case "fullscreen":
+                    if (!document.fullscreenElement) {
+                        await document.documentElement.requestFullscreen();
+                    }
+                    return !!document.fullscreenElement;
+                case "screen":
+                    const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                    screenStream.getTracks().forEach(track => track.stop());
+                    return true;
+                case "clipboard":
+                    await navigator.clipboard.readText().catch(() => { });
+                    return true;
+                default:
+                    return true;
+            }
+        } catch (error) {
+            console.error(`Permission denied for ${id}:`, error);
+            return false;
+        }
+    };
+
+    const requestPermission = async (id: string) => {
+        const granted = await checkPermissionStatus(id);
         setPermissions(prev => prev.map(p =>
-            p.id === id ? { ...p, status: "granted" } : p
+            p.id === id ? { ...p, status: granted ? "granted" : "denied" } : p
         ));
     };
 
     const verifyAll = async () => {
         setChecking(true);
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        setPermissions(prev => prev.map(p => ({ ...p, status: "granted" })));
+        for (const p of permissions) {
+            if (p.status !== "granted") {
+                const granted = await checkPermissionStatus(p.id);
+                setPermissions(prev => prev.map(item =>
+                    item.id === p.id ? { ...item, status: granted ? "granted" : "denied" } : item
+                ));
+                if (!granted) break; // Stop if one fails during auto-verify
+            }
+        }
         setChecking(false);
     };
 
@@ -81,7 +154,7 @@ export default function PermissionsPage() {
                             {permissions.map((p) => (
                                 <div key={p.id} className="group p-4 flex items-center justify-between hover:bg-muted/30 transition-colors">
                                     <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 rounded-lg bg-background border border-border flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:border-primary/50 transition-colors shadow-sm">
+                                        <div className="w-10 h-10 rounded-md bg-background border border-border flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:border-primary/50 transition-colors shadow-sm">
                                             <p.icon className="w-5 h-5" />
                                         </div>
                                         <div>
