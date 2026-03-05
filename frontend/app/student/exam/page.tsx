@@ -178,7 +178,8 @@ function ExamContent() {
                 setUserEmail(userData.email);
 
                 // Check if already submitted
-                const checkRes = await fetch(`${getBaseApiUrl()}/submissions/check?email=${userData.email}`);
+                const examId = localStorage.getItem("vortex_active_exam_id") || "default";
+                const checkRes = await fetch(`${getBaseApiUrl()}/submissions/check?email=${userData.email}&exam_id=${examId}`);
                 const checkData = await checkRes.json();
 
                 if (checkData.hasSubmitted) {
@@ -646,9 +647,10 @@ function ExamContent() {
             await stopMonitoring();
 
             // Post submission to backend
+            const examId = localStorage.getItem("vortex_active_exam_id") || "default";
             const submissionData = {
                 user_email: userEmail,
-                exam_id: 'default', // Can be dynamic later
+                exam_id: examId,
                 responses: responses,
                 violations: violations,
                 violation_details: violationCounts

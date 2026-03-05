@@ -40,6 +40,16 @@ function CreateExamContent() {
     const [isUploading, setIsUploading] = useState(false);
     const [isCreating, setIsCreating] = useState(false);
 
+    const [examDetails, setExamDetails] = useState({
+        title: "",
+        description: "",
+        duration: 60,
+        marks: 100,
+        startTime: "",
+        endTime: ""
+    });
+    const [createdExamId, setCreatedExamId] = useState("");
+
     const addQuestion = () => {
         const newQuestion: Question = {
             id: Date.now().toString(),
@@ -111,18 +121,43 @@ function CreateExamContent() {
     const handleCreate = async () => {
         setIsCreating(true);
         try {
+            const newExamId = "VX-" + Math.random().toString(36).substring(2, 7).toUpperCase();
+
+            // 1. Create Exam Metadata
+            const examResponse = await fetch(`${getBaseApiUrl()}/exams`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: newExamId,
+                    title: examDetails.title || "New Assessment",
+                    description: examDetails.description,
+                    scheduled_at: examDetails.startTime ? new Date(examDetails.startTime).toISOString() : new Date().toISOString()
+                })
+            });
+
+            if (!examResponse.ok) {
+                throw new Error('Failed to create exam session');
+            }
+
+            // 2. Save Questions with Exam ID
+            const questionsPayload = questions.map(q => ({
+                ...q,
+                exam_id: newExamId
+            }));
+
             const response = await fetch(`${getBaseApiUrl()}/questions`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(questions),
+                body: JSON.stringify(questionsPayload),
             });
 
             if (!response.ok) {
                 throw new Error('Failed to save questions');
             }
 
+            setCreatedExamId(newExamId);
             setShowShare(true);
             addToast({
                 title: "Success",
@@ -131,10 +166,10 @@ function CreateExamContent() {
                 duration: 3000,
             });
         } catch (error) {
-            console.error('Error saving exam questions:', error);
+            console.error('Error saving exam:', error);
             addToast({
                 title: "Error",
-                description: "Failed to save exam questions. Backend might not be running.",
+                description: "Failed to create exam. Please check connection.",
                 variant: "destructive",
                 duration: 5000,
             });
@@ -196,27 +231,57 @@ function CreateExamContent() {
                 <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2 md:col-span-2">
                         <Label className="text-foreground font-semibold">Exam Title</Label>
-                        <Input placeholder="e.g., Data Structures & Algorithms - Final" className="bg-background border-border text-foreground" />
+                        <Input
+                            placeholder="e.g., Data Structures & Algorithms - Final"
+                            className="bg-background border-border text-foreground"
+                            value={examDetails.title}
+                            onChange={(e) => setExamDetails({ ...examDetails, title: e.target.value })}
+                        />
                     </div>
                     <div className="space-y-2 md:col-span-2">
                         <Label className="text-foreground font-semibold">Description</Label>
-                        <Textarea placeholder="Provide instructions for students..." className="bg-background border-border min-h-[100px] text-foreground" />
+                        <Textarea
+                            placeholder="Provide instructions for students..."
+                            className="bg-background border-border min-h-[100px] text-foreground"
+                            value={examDetails.description}
+                            onChange={(e) => setExamDetails({ ...examDetails, description: e.target.value })}
+                        />
                     </div>
                     <div className="space-y-2">
                         <Label className="text-foreground font-semibold">Duration (Minutes)</Label>
-                        <Input type="number" defaultValue="60" className="bg-background border-border text-foreground" />
+                        <Input
+                            type="number"
+                            value={examDetails.duration}
+                            onChange={(e) => setExamDetails({ ...examDetails, duration: parseInt(e.target.value) || 0 })}
+                            className="bg-background border-border text-foreground"
+                        />
                     </div>
                     <div className="space-y-2">
                         <Label className="text-foreground font-semibold">Total Marks</Label>
-                        <Input type="number" defaultValue="100" className="bg-background border-border text-foreground" />
+                        <Input
+                            type="number"
+                            value={examDetails.marks}
+                            onChange={(e) => setExamDetails({ ...examDetails, marks: parseInt(e.target.value) || 0 })}
+                            className="bg-background border-border text-foreground"
+                        />
                     </div>
                     <div className="space-y-2">
                         <Label className="text-foreground font-semibold">Start Time</Label>
-                        <Input type="datetime-local" className="bg-background border-border text-foreground" />
+                        <Input
+                            type="datetime-local"
+                            value={examDetails.startTime}
+                            onChange={(e) => setExamDetails({ ...examDetails, startTime: e.target.value })}
+                            className="bg-background border-border text-foreground"
+                        />
                     </div>
                     <div className="space-y-2">
                         <Label className="text-foreground font-semibold">End Time</Label>
-                        <Input type="datetime-local" className="bg-background border-border text-foreground" />
+                        <Input
+                            type="datetime-local"
+                            value={examDetails.endTime}
+                            onChange={(e) => setExamDetails({ ...examDetails, endTime: e.target.value })}
+                            className="bg-background border-border text-foreground"
+                        />
                     </div>
                 </CardContent>
             </Card>
@@ -393,7 +458,7 @@ function CreateExamContent() {
                                 <div className="space-y-3">
                                     <Label className="text-muted-foreground text-[10px] uppercase font-black tracking-widest">Exam Join Code</Label>
                                     <div className="flex gap-2">
-                                        <Input readOnly value="VX-12345" className="bg-muted/30 border-border h-14 text-center font-mono text-2xl tracking-[0.2em] text-primary font-black select-all" />
+                                        <Input readOnly value={createdExamId} className="bg-muted/30 border-border h-14 text-center font-mono text-2xl tracking-[0.2em] text-primary font-black select-all" />
                                         <Button size="icon" variant="outline" className="border-border hover:bg-muted h-14 w-14 shrink-0 shadow-sm"><Copy className="h-5 w-5" /></Button>
                                     </div>
                                 </div>
@@ -403,7 +468,7 @@ function CreateExamContent() {
                                     <div className="flex gap-2">
                                         <div className="flex-1 bg-muted/30 border border-border rounded-md px-4 h-12 text-sm text-foreground font-bold flex items-center gap-3 overflow-hidden whitespace-nowrap shadow-inner">
                                             <LinkIcon className="w-4 h-4 text-primary shrink-0" />
-                                            offguard.app/join/VX-12345
+                                            {typeof window !== 'undefined' ? `${window.location.origin}/join/${createdExamId}` : `offguard.app/join/${createdExamId}`}
                                         </div>
                                         <Button size="icon" variant="outline" className="border-border hover:bg-muted h-12 w-12 shrink-0 shadow-sm"><Copy className="h-4 w-4" /></Button>
                                     </div>

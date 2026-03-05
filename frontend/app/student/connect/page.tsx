@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Camera, Terminal, Globe, Loader2, ShieldCheck, QrCode, LogOut } from "lucide-react";
-import { logout } from "@/lib/api";
+import { logout, getBaseApiUrl } from "@/lib/api";
 
 export default function StudentConnectPage() {
     const router = useRouter();
@@ -17,18 +17,30 @@ export default function StudentConnectPage() {
     const [downloadProgress, setDownloadProgress] = useState(0);
 
     const handleConnect = async () => {
-        if (examCode !== "VX-12345" && !examUrl.includes("VX-12345")) {
-            alert("Invalid Exam Code. Please use 'VX-12345' for testing.");
-            return;
-        }
+        const codeToUse = examCode || (examUrl ? examUrl.split('/').pop() : "");
+        if (!codeToUse) return;
 
         setIsConnecting(true);
-        // Simulate downloading exam package
-        for (let i = 0; i <= 100; i += 20) {
-            setDownloadProgress(i);
-            await new Promise(resolve => setTimeout(resolve, 400));
+
+        try {
+            const response = await fetch(`${getBaseApiUrl()}/exams/${codeToUse}`);
+            if (!response.ok) {
+                throw new Error("Exam not found");
+            }
+
+            localStorage.setItem("vortex_active_exam_id", codeToUse);
+
+            // Simulate downloading exam package
+            for (let i = 0; i <= 100; i += 20) {
+                setDownloadProgress(i);
+                await new Promise(resolve => setTimeout(resolve, 400));
+            }
+            router.push("/student/permissions");
+        } catch (error) {
+            alert("Invalid Exam Code. Please check and try again.");
+        } finally {
+            setIsConnecting(false);
         }
-        router.push("/student/permissions");
     };
 
     const handleLogout = () => {

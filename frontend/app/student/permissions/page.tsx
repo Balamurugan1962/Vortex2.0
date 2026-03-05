@@ -54,7 +54,6 @@ export default function PermissionsPage() {
     const [permissions, setPermissions] = useState<PermissionItem[]>([
         { id: "camera", label: "Camera Access", icon: Camera, status: "pending", description: "Required for proctoring and identity verification." },
         { id: "mic", label: "Microphone Access", icon: Mic, status: "pending", description: "Required to detect unauthorized environmental noise." },
-        { id: "location", label: "Location Access", icon: MapPin, status: "pending", description: "Required to verify regional examination compliance." },
         { id: "fullscreen", label: "Fullscreen Mode", icon: Maximize, status: "pending", description: "App must occupy the entire display to prevent multi-tasking." },
         { id: "clipboard", label: "Clipboard Restrictions", icon: Copy, status: "pending", description: "Restricting copy/paste actions to ensure exam integrity." },
         { id: "screen", label: "Screen Monitoring", icon: Monitor, status: "pending", description: "Enabling active focus tracking and screenshot captures." },

@@ -14,6 +14,15 @@
 <key>NSLocationWhenInUseUsageDescription</key>
 <string>This app requires location verification for exam compliance.</string>
 
+<key>NSLocationUsageDescription</key>
+<string>This app requires location verification for exam compliance.</string>
+
+<key>NSLocationAlwaysUsageDescription</key>
+<string>This app requires location verification for exam compliance.</string>
+
+<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+<string>This app requires location verification for exam compliance.</string>
+
 <key>NSScreenCaptureUsageDescription</key>
 <string>This app monitors screen activity during exams.</string>
 

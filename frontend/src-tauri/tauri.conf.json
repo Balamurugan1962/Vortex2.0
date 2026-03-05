@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "frontendvortex-exam",
+  "productName": "OffGuard",
   "version": "0.1.0",
-  "identifier": "com.outliers.vortex",
+  "identifier": "com.outliers.offguard",
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:3000",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Vortex Exam - Secure Session",
+        "title": "OffGuard - Secure Session",
         "width": 1920,
         "height": 1080,
         "resizable": true,
@@ -35,6 +35,10 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "entitlements": "Entitlements.macOS.plist",
+      "infoPlist": "Info.plist"
+    }
   }
 }
