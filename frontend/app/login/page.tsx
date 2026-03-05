@@ -41,7 +41,7 @@ export default function LoginPage() {
                             <Input
                                 id="email"
                                 type="email"
-                                placeholder="name@vortex.com"
+                                placeholder="name@offguard.com"
                                 required
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}

@@ -54,7 +54,7 @@ export default function CreateExamPage() {
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);
-        link.setAttribute("download", "vortex_exam_template.csv");
+        link.setAttribute("download", "offguard_exam_template.csv");
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
