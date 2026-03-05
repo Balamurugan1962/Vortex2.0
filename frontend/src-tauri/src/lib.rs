@@ -50,6 +50,43 @@ async fn stop_exam_monitoring() -> Result<String, String> {
 }
 
 #[command]
+async fn check_screen_mirroring() -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use core_graphics::display::{CGGetActiveDisplayList, CGDisplayIsInMirrorSet};
+        
+        let max_displays = 32;
+        let mut active_displays = vec![0; max_displays];
+        let mut display_count = 0;
+
+        let result = unsafe {
+            CGGetActiveDisplayList(
+                max_displays as u32,
+                active_displays.as_mut_ptr(),
+                &mut display_count,
+            )
+        };
+
+        if result == 0 { // kCGErrorSuccess
+            for i in 0..display_count {
+                let display_id = active_displays[i as usize];
+                let is_mirrored = unsafe { CGDisplayIsInMirrorSet(display_id) };
+                if is_mirrored != 0 {
+                    return Ok(true);
+                }
+            }
+        }
+        
+        Ok(false)
+    }
+    
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(false)
+    }
+}
+
+#[command]
 async fn get_violations(limit: Option<i32>) -> Result<Vec<Violation>, String> {
     let client = reqwest::Client::new();
     let url = format!("{}/logs?limit={}", FASTAPI_URL, limit.unwrap_or(50));
@@ -76,10 +113,13 @@ pub fn run() {
     .plugin(tauri_plugin_shell::init())
     .plugin(tauri_plugin_clipboard_manager::init())
     .plugin(tauri_plugin_window_state::Builder::default().build())
+    .plugin(tauri_plugin_screenshots::init())
+    .plugin(tauri_plugin_fs::init())
     .invoke_handler(tauri::generate_handler![
         start_exam_monitoring,
         stop_exam_monitoring,
-        get_violations
+        get_violations,
+        check_screen_mirroring
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {
