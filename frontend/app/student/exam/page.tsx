@@ -29,6 +29,15 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// Tauri-specific imports
+const getTauriWindow = async () => {
+    if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__) {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        return getCurrentWindow();
+    }
+    return null;
+};
+
 // Mock Question Data
 const mockQuestions = [
     {
@@ -160,7 +169,12 @@ export default function ExamPage() {
 
     const reEnterFullscreen = async () => {
         try {
-            await document.documentElement.requestFullscreen();
+            const tauriWin = await getTauriWindow();
+            if (tauriWin) {
+                await tauriWin.setFullscreen(true);
+            } else {
+                await document.documentElement.requestFullscreen();
+            }
         } catch (e) {
             console.error("Fullscreen restoration failed", e);
         }
