@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use tauri::command;
+use std::collections::HashSet;
 
 const FASTAPI_URL: &str = "http://localhost:8000";
 
@@ -80,7 +81,47 @@ async fn check_screen_mirroring() -> Result<bool, String> {
         Ok(false)
     }
     
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::Graphics::Gdi::{EnumDisplaySettingsW, DEVMODEW, ENUM_CURRENT_SETTINGS};
+        
+        let mut i = 0;
+        let mut mirrored = false;
+        let mut positions = HashSet::new();
+        let mut _display_count = 0;
+
+        unsafe {
+            loop {
+                let mut dev_mode: DEVMODEW = std::mem::zeroed();
+                dev_mode.dmSize = std::mem::size_of::<DEVMODEW>() as u16;
+                
+                // Get display name (e.g., \\.\DISPLAY1)
+                let mut display_name = [0u16; 32];
+                let name_str = format!("\\\\.\\DISPLAY{}", i + 1);
+                for (j, c) in name_str.encode_utf16().enumerate() {
+                    if j < 31 { display_name[j] = c; }
+                }
+
+                if EnumDisplaySettingsW(display_name.as_ptr(), ENUM_CURRENT_SETTINGS, &mut dev_mode) != 0 {
+                    _display_count += 1;
+                    let pos = (dev_mode.Anonymous1.Anonymous2.dmPosition.x, dev_mode.Anonymous1.Anonymous2.dmPosition.y);
+                    if positions.contains(&pos) {
+                        mirrored = true;
+                        break;
+                    }
+                    positions.insert(pos);
+                    i += 1;
+                } else {
+                    break;
+                }
+            }
+        }
+        
+        // If we found identical positions for different displays, it's mirrored
+        Ok(mirrored)
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         Ok(false)
     }
@@ -129,26 +170,39 @@ async fn get_running_apps() -> Result<Vec<ProcessInfo>, String> {
             let name_lower = name.to_lowercase();
             let exe_path = p.exe().and_then(|path| path.to_str()).unwrap_or("").to_lowercase();
             
-            // 1. MUST NOT be a system daemon (usually ends in 'd')
-            if name.ends_with('d') { return false; }
+            // 1. MUST NOT be a system daemon (usually ends in 'd' on Mac)
+            if cfg!(target_os = "macos") && name.ends_with('d') { return false; }
             
             // 2. MUST NOT be a background component
             let is_background = name_lower.contains("helper") || 
                                 name_lower.contains("extension") ||
                                 name_lower.contains("agent") ||
                                 name_lower.contains("service") ||
-                                name_lower.contains("vortex");
+                                name_lower.contains("vortex") ||
+                                name_lower.contains("runtime") ||
+                                name_lower.contains("broker") ||
+                                name_lower.contains("host");
             if is_background { return false; }
 
-            // 3. MUST be a proper GUI Application bundle on macOS
-            let is_gui_app = exe_path.contains(".app/contents/macos/");
+            // 3. Platform-specific GUI Application check
+            let is_gui_app = if cfg!(target_os = "macos") {
+                exe_path.contains(".app/contents/macos/")
+            } else if cfg!(target_os = "windows") {
+                // On Windows, apps are usually in Program Files, or we just rely on common names
+                // For now, allow .exe but still exclude system locations if needed
+                exe_path.ends_with(".exe") && !exe_path.contains("\\windows\\system32\\")
+            } else {
+                true
+            };
+            
             if !is_gui_app { return false; }
 
             // 4. Finally, check against our prohibited categories
             let is_browser = name_lower.contains("chrome") || name_lower.contains("safari") || 
                              name_lower.contains("firefox") || name_lower.contains("edge") ||
                              name_lower.contains("arc") || name_lower.contains("opera") ||
-                             name_lower.contains("brave") || name_lower.contains("helium");
+                             name_lower.contains("brave") || name_lower.contains("helium") ||
+                             name_lower.contains("browser");
             
             let is_communication = name_lower.contains("whatsapp") || name_lower.contains("telegram") || 
                                    name_lower.contains("discord") || name_lower.contains("slack") || 
