@@ -95,6 +95,16 @@ export default function Home() {
               </div>
             </div>
           )}
+
+          <div className="pt-4 border-t border-border mt-4">
+            <Button
+              variant="secondary"
+              className="w-full flex items-center justify-center gap-2 font-semibold text-muted-foreground hover:text-foreground"
+              onClick={() => router.push("/debug")}
+            >
+              Open Debug Tools
+            </Button>
+          </div>
         </div>
       </div>
 
