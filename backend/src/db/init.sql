@@ -9,3 +9,14 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- Note: We can expand this with exam records, organization ids etc later.
+
+CREATE TABLE IF NOT EXISTS settings (
+    key VARCHAR(255) PRIMARY KEY,
+    value VARCHAR(255) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert default settings if they don't exist
+INSERT INTO settings (key, value) 
+VALUES ('registration_enabled', 'true')
+ON CONFLICT (key) DO NOTHING;

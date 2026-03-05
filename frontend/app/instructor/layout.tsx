@@ -41,13 +41,6 @@ export default function InstructorLayout({ children }: { children: React.ReactNo
                         </a>
                     ))}
                 </nav>
-
-                <div className="p-4 border-t border-sidebar-border">
-                    <button className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-muted-foreground hover:text-red-500 hover:bg-red-500/5 transition-colors w-full">
-                        <LogOut className="w-4 h-4" />
-                        Sign Out
-                    </button>
-                </div>
             </aside>
 
             {/* Main Content */}

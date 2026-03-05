@@ -3,6 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { pool, initDb } from './db';
 import authRoutes from './routes/auth';
+import adminRoutes from './routes/admin';
+import settingsRoutes from './routes/settings';
 
 dotenv.config();
 
@@ -18,6 +20,8 @@ initDb();
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Test raw DB connection route
 app.get('/api/health', async (req, res) => {

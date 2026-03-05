@@ -6,7 +6,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Camera, Terminal, Globe, Loader2, ShieldCheck, QrCode } from "lucide-react";
+import { Camera, Terminal, Globe, Loader2, ShieldCheck, QrCode, LogOut } from "lucide-react";
+import { logout } from "@/lib/api";
 
 export default function StudentConnectPage() {
     const router = useRouter();
@@ -30,8 +31,18 @@ export default function StudentConnectPage() {
         router.push("/student/permissions");
     };
 
+    const handleLogout = () => {
+        logout();
+        router.push("/login");
+    };
+
     return (
-        <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary/5 via-background to-background">
+        <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center p-6 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary/5 via-background to-background">
+            <div className="w-full max-w-5xl flex justify-end mb-8">
+                <Button variant="ghost" onClick={handleLogout} className="flex items-center gap-2 text-muted-foreground hover:text-foreground">
+                    <LogOut className="w-4 h-4" /> Sign Out
+                </Button>
+            </div>
             <div className="max-w-xl w-full">
                 {/* Manual Join only */}
                 <div className="flex flex-col gap-6">
