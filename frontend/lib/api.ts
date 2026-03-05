@@ -1,6 +1,12 @@
 export const getBaseApiUrl = () => {
     if (typeof window !== 'undefined') {
-        return localStorage.getItem('vortex_api_url') || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+        const stored = localStorage.getItem('vortex_api_url');
+        // Force update if pointing to legacy 3002 port
+        if (stored && stored.includes(':3002')) {
+            localStorage.removeItem('vortex_api_url');
+            return 'http://localhost:3001/api';
+        }
+        return stored || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
     }
     return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 };

@@ -32,10 +32,24 @@ INSERT INTO settings (key, value)
 VALUES ('registration_enabled', 'true')
 ON CONFLICT (key) DO NOTHING;
 
+CREATE TABLE IF NOT EXISTS exams (
+    id VARCHAR(255) PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    status VARCHAR(50) DEFAULT 'active',
+    scheduled_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert a default exam if it doesn't exist
+INSERT INTO exams (id, title, description)
+VALUES ('default', 'General Assessment', 'Primary examination module for testing and evaluation.')
+ON CONFLICT (id) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS submissions (
     id SERIAL PRIMARY KEY,
     user_email VARCHAR(255) NOT NULL,
-    exam_id VARCHAR(255) DEFAULT 'default',
+    exam_id VARCHAR(255) DEFAULT 'default' REFERENCES exams(id),
     responses JSONB NOT NULL,
     violations INTEGER DEFAULT 0,
     violation_details JSONB,

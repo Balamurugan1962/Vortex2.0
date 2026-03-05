@@ -7,6 +7,7 @@ import adminRoutes from './routes/admin';
 import settingsRoutes from './routes/settings';
 import questionsRoutes from './routes/questions';
 import submissionsRoutes from './routes/submissions';
+import examsRoutes from './routes/exams';
 
 dotenv.config();
 
@@ -28,7 +29,8 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/questions', questionsRoutes);
 app.use('/api/submissions', submissionsRoutes);
-console.log('Registered /api/questions');
+app.use('/api/exams', examsRoutes);
+console.log('Registered /api/questions, /api/submissions, /api/exams');
 
 // Test raw DB connection route
 app.get('/api/health', async (req, res) => {
