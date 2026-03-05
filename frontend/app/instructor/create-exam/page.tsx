@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PlusCircle, Trash2, GripVertical, CheckCircle, Share2, QrCode, Copy, Link as LinkIcon, Upload, FileType, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ToastProvider, useToast } from "@/components/ui/toast";
+import { getBaseApiUrl } from "@/lib/api";
 
 type QuestionType = "MCQ" | "Multi-select" | "Short Answer" | "Long Answer" | "Scenario";
 
@@ -110,7 +111,7 @@ function CreateExamContent() {
     const handleCreate = async () => {
         setIsCreating(true);
         try {
-            const response = await fetch('http://localhost:3002/api/questions', {
+            const response = await fetch(`${getBaseApiUrl()}/questions`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

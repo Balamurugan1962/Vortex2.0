@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ToastProvider, useToast } from "@/components/ui/toast";
-import { getMe } from "@/lib/api";
+import { getMe, getBaseApiUrl } from "@/lib/api";
 import {
     Timer,
     Wifi,
@@ -178,7 +178,7 @@ function ExamContent() {
                 setUserEmail(userData.email);
 
                 // Check if already submitted
-                const checkRes = await fetch(`http://localhost:3001/api/submissions/check?email=${userData.email}`);
+                const checkRes = await fetch(`${getBaseApiUrl()}/submissions/check?email=${userData.email}`);
                 const checkData = await checkRes.json();
 
                 if (checkData.hasSubmitted) {
@@ -207,34 +207,42 @@ function ExamContent() {
         if (!permissionsVerified) return;
 
         const fetchQuestions = async () => {
-            try {
-                const response = await fetch('http://localhost:3001/api/questions');
-                if (!response.ok) throw new Error('Failed to fetch questions');
-                const data = await response.json();
+            const baseUrl = getBaseApiUrl();
+            console.log("Exam Engine: Fetching questions from", `${baseUrl}/questions`);
 
-                if (data.length === 0) {
-                    setQuestions(mockQuestions); // Fallback if no questions in DB
+            try {
+                const response = await fetch(`${baseUrl}/questions`);
+                console.log("Exam Engine: Response status", response.status);
+
+                if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
+
+                const data = await response.json();
+                console.log(`Exam Engine: Data received (${data.length} items)`);
+
+                if (!data || data.length === 0) {
+                    console.warn("Exam Engine: No questions in database, falling back to mocks.");
+                    setQuestions(mockQuestions);
                 } else {
                     // Map DB format to expected frontend format
                     const mappedData = data.map((q: any) => ({
-                        id: q.id.toString(),
-                        type: q.type,
-                        question: q.question, // Database uses 'question'
-                        options: Array.isArray(q.options) ? q.options : (typeof q.options === 'string' ? JSON.parse(q.options) : []),
-                        correctAnswers: Array.isArray(q.correct_answers) ? q.correct_answers : (typeof q.correct_answers === 'string' ? JSON.parse(q.correct_answers) : []),
+                        id: q?.id?.toString() || Math.random().toString(),
+                        type: q?.type || "MCQ",
+                        question: q?.question || "Missing question text",
+                        options: Array.isArray(q?.options) ? q.options : (typeof q?.options === 'string' ? (JSON.parse(q.options) || []) : (q?.options || [])),
+                        correctAnswers: Array.isArray(q?.correct_answers) ? q.correct_answers : (typeof q?.correct_answers === 'string' ? (JSON.parse(q.correct_answers) || []) : (q?.correct_answers || [])),
                         state: "not-visited"
                     }));
-                    console.log("Mapped questions:", mappedData);
+                    console.log("Exam Engine: Successfully mapped questions:", mappedData.length);
                     setQuestions(mappedData);
                 }
             } catch (error) {
-                console.error("Error fetching questions:", error);
-                setQuestions(mockQuestions); // Fallback on error
+                console.error("Exam Engine: Critical fetch failure:", error);
+                setQuestions(mockQuestions);
                 addToast({
-                    title: "Connection Error",
-                    description: "Failed to load questions from server. Using offline mock data.",
+                    title: "Sync Error",
+                    description: `Could not connect to ${baseUrl}. Using backup data.`,
                     variant: "warning",
-                    duration: 5000,
+                    duration: 7000,
                 });
             } finally {
                 setIsLoadingQuestions(false);
@@ -255,7 +263,7 @@ function ExamContent() {
                     method: "POST"
                 });
                 const data = await response.json();
-                
+
                 if (data.status === "error") {
                     addToast({
                         title: "Camera Error",
@@ -267,7 +275,7 @@ function ExamContent() {
                 }
 
                 console.log("✅ Exam initialized - Violation limit: 10");
-                
+
                 // Also notify Tauri
                 await invokeTauriCommand("start_exam_monitoring");
                 setIsMonitoringActive(true);
@@ -278,7 +286,7 @@ function ExamContent() {
 
                 // Request fullscreen on exam start
                 setTimeout(() => reEnterFullscreen(), 500);
-                
+
                 addToast({
                     title: "Exam Started",
                     description: "Camera and monitoring initialized",
@@ -370,7 +378,7 @@ function ExamContent() {
         // Use the violation count from backend for strict enforcement
         const backendCount = (violation as any).violation_count;
         const maxViolations = (violation as any).max_violations || TOTAL_VIOLATION_THRESHOLD;
-        
+
         if (backendCount) {
             // Backend is tracking - use its count
             actualViolationCount.current = backendCount;
@@ -426,7 +434,7 @@ function ExamContent() {
 
         // Check for warning
         const typeCount = (violationCounts[event_type] || 0) + 1;
-        
+
         if (totalViolations === VIOLATION_WARNING_THRESHOLD) {
             // Show warning modal at 5 violations
             setShowViolationWarning(true);
@@ -452,12 +460,12 @@ function ExamContent() {
                 wsRef.current.close();
                 wsRef.current = null;
             }
-            
+
             // Stop exam on backend
             await fetch("http://localhost:8000/stop_exam", {
                 method: "POST"
             });
-            
+
             // Notify Tauri
             await invokeTauriCommand("stop_exam_monitoring");
             setIsMonitoringActive(false);
@@ -646,7 +654,7 @@ function ExamContent() {
                 violation_details: violationCounts
             };
 
-            const response = await fetch('http://localhost:3001/api/submissions', {
+            const response = await fetch(`${getBaseApiUrl()}/submissions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(submissionData)
