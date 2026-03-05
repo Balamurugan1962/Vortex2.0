@@ -17,10 +17,11 @@ except Exception:
 
 is_running = False
 continuous_voice_start = None
-last_speech_log = 0  # Track last time we logged speech detection
+last_violation_log = 0  # Track last time we logged VOICE_DETECTED violation
+VIOLATION_COOLDOWN = 10.0  # Only log violation once per 10 seconds of continuous speech
 
 def audio_callback(indata, frames, time_info, status):
-    global continuous_voice_start, last_speech_log
+    global continuous_voice_start, last_violation_log
     if not is_running or not vad:
         return
 
@@ -37,19 +38,15 @@ def audio_callback(indata, frames, time_info, status):
         
         current_time = time.time()
         if is_speech:
-            # Debug log (throttled to once per 5 seconds)
-            if current_time - last_speech_log > 5.0:
-                print(f"🎤 Speech detected!")
-                last_speech_log = current_time
-            
             if continuous_voice_start is None:
                 continuous_voice_start = current_time
             else:
                 duration = current_time - continuous_voice_start
-                if duration > 3.0: # Continuous conversation > 3 seconds
+                # Only log violation once per 10 seconds of continuous speech (not repeatedly)
+                if duration > 3.0 and (current_time - last_violation_log) > VIOLATION_COOLDOWN:
                     log_violation("VOICE_DETECTED", 1.0, {"duration": round(duration, 2), "speech_probability": 0.95})
-                    print(f"Logged Violation: VOICE_DETECTED (duration: {duration:.2f}s)")
-                    continuous_voice_start = current_time # Reset to avoid spam
+                    print(f"🎤 Logged Violation: VOICE_DETECTED (duration: {duration:.2f}s)")
+                    last_violation_log = current_time
         else:
             continuous_voice_start = None
 

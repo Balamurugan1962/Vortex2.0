@@ -135,6 +135,7 @@ function ExamContent() {
     const lastViolationTime = useRef<{ [key: string]: number }>({});
     const lastFullscreenState = useRef<boolean>(true);
     const isTerminating = useRef<boolean>(false);
+    const actualViolationCount = useRef<number>(0);  // Track actual count synchronously
 
     // Thresholds
     const TOTAL_VIOLATION_THRESHOLD = 10;
@@ -162,8 +163,27 @@ function ExamContent() {
     useEffect(() => {
         if (!permissionsVerified) return;
 
-        const startMonitoring = async () => {
+        const initializeExam = async () => {
             try {
+                // Call backend to start exam and initialize camera
+                const response = await fetch("http://localhost:8000/start_exam", {
+                    method: "POST"
+                });
+                const data = await response.json();
+                
+                if (data.status === "error") {
+                    addToast({
+                        title: "Camera Error",
+                        description: data.message || "Failed to initialize camera",
+                        variant: "destructive",
+                        duration: 5000,
+                    });
+                    return;
+                }
+
+                console.log("✅ Exam initialized - Violation limit: 10");
+                
+                // Also notify Tauri
                 await invokeTauriCommand("start_exam_monitoring");
                 setIsMonitoringActive(true);
                 console.log("Exam monitoring started");
@@ -173,18 +193,25 @@ function ExamContent() {
 
                 // Request fullscreen on exam start
                 setTimeout(() => reEnterFullscreen(), 500);
-            } catch (error) {
-                console.error("Failed to start monitoring:", error);
+                
                 addToast({
-                    title: "Monitoring Error",
-                    description: "Failed to start exam monitoring",
+                    title: "Exam Started",
+                    description: "Camera and monitoring initialized",
+                    variant: "default",
+                    duration: 3000,
+                });
+            } catch (error) {
+                console.error("Failed to initialize exam:", error);
+                addToast({
+                    title: "Initialization Error",
+                    description: String(error),
                     variant: "destructive",
                     duration: 5000,
                 });
             }
         };
 
-        startMonitoring();
+        initializeExam();
 
         return () => {
             stopMonitoring();
@@ -255,17 +282,31 @@ function ExamContent() {
     };
 
     const handleViolation = (violation: Violation) => {
+        // Use the violation count from backend for strict enforcement
+        const backendCount = (violation as any).violation_count;
+        const maxViolations = (violation as any).max_violations || TOTAL_VIOLATION_THRESHOLD;
+        
+        if (backendCount) {
+            // Backend is tracking - use its count
+            actualViolationCount.current = backendCount;
+            setViolations(backendCount);
+        } else {
+            // Fallback to frontend tracking
+            actualViolationCount.current += 1;
+            setViolations(actualViolationCount.current);
+        }
+
+        const totalViolations = actualViolationCount.current;
+
+        // Update violation counts
         const { event_type } = violation;
         const now = Date.now();
         const lastTime = lastViolationTime.current[event_type] || 0;
 
-        // Update violation counts
         setViolationCounts((prev) => ({
             ...prev,
             [event_type]: (prev[event_type] || 0) + 1,
         }));
-
-        setViolations((prev) => prev + 1);
 
         // Show toast notification (with cooldown to prevent spam)
         if (now - lastTime > VIOLATION_COOLDOWN) {
@@ -274,7 +315,7 @@ function ExamContent() {
 
             addToast({
                 title: "Security Alert",
-                description: `${message} (${count + 1} times)`,
+                description: `${message} (Violation ${totalViolations}/${TOTAL_VIOLATION_THRESHOLD})`,
                 variant: "destructive",
                 duration: 6000,
             });
@@ -282,34 +323,38 @@ function ExamContent() {
             lastViolationTime.current[event_type] = now;
         }
 
-        // Check thresholds
-        const totalViolations = violations + 1;
-        const typeCount = (violationCounts[event_type] || 0) + 1;
-
+        // STRICT 10 VIOLATION LIMIT - Check immediately
         if (totalViolations >= TOTAL_VIOLATION_THRESHOLD) {
             if (!isTerminating.current) {
                 isTerminating.current = true;
+                console.log(`❌ EXAM TERMINATED: ${totalViolations}/${TOTAL_VIOLATION_THRESHOLD} violations reached`);
                 addToast({
                     title: "Exam Terminated",
-                    description: `Total violation threshold exceeded (${totalViolations})`,
+                    description: `Violation limit (${TOTAL_VIOLATION_THRESHOLD}) exceeded. Session ended.`,
                     variant: "destructive",
                     duration: 0,
                 });
-                setTimeout(() => handleSubmit("violations_exceeded"), 2000);
+                setTimeout(() => handleSubmit("violations_exceeded"), 1000);
             }
-        } else if (totalViolations === VIOLATION_WARNING_THRESHOLD) {
+            return;  // Stop processing
+        }
+
+        // Check for warning
+        const typeCount = (violationCounts[event_type] || 0) + 1;
+        
+        if (totalViolations === VIOLATION_WARNING_THRESHOLD) {
             // Show warning modal at 5 violations
             setShowViolationWarning(true);
             addToast({
                 title: "⚠️ EXAM WARNING",
-                description: `You have ${totalViolations} violations. Continue and you may be auto-terminated.`,
+                description: `You have ${totalViolations}/${TOTAL_VIOLATION_THRESHOLD} violations. Continue and you may be auto-terminated.`,
                 variant: "warning",
                 duration: 0,
             });
         } else if (typeCount >= SAME_TYPE_THRESHOLD) {
             addToast({
                 title: "Warning",
-                description: `Multiple ${VIOLATION_MESSAGES[event_type]?.toLowerCase()} violations detected`,
+                description: `Multiple ${VIOLATION_MESSAGES[event_type]?.toLowerCase()} violations detected (${typeCount}/${SAME_TYPE_THRESHOLD})`,
                 variant: "warning",
                 duration: 8000,
             });
@@ -322,6 +367,13 @@ function ExamContent() {
                 wsRef.current.close();
                 wsRef.current = null;
             }
+            
+            // Stop exam on backend
+            await fetch("http://localhost:8000/stop_exam", {
+                method: "POST"
+            });
+            
+            // Notify Tauri
             await invokeTauriCommand("stop_exam_monitoring");
             setIsMonitoringActive(false);
             console.log("Exam monitoring stopped");
