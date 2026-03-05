@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import * as tf from "@tensorflow/tfjs";
+import * as cocoSsd from "@tensorflow-models/coco-ssd";
 import { invoke } from "@tauri-apps/api/core";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Monitor, MonitorOff, AlertTriangle, Camera, EyeOff } from "lucide-react";
+import { ArrowLeft, Monitor, MonitorOff, AlertTriangle, Camera, EyeOff, Video, VideoOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { getScreenshotableMonitors, getMonitorScreenshot } from "tauri-plugin-screenshots-api";
 
@@ -15,6 +17,35 @@ export default function DebugPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
+
+  // Camera State
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const modelRef = useRef<cocoSsd.ObjectDetection | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+
+  // AI State
+  const [modelLoaded, setModelLoaded] = useState(false);
+  const [personCount, setPersonCount] = useState(0);
+  const [phoneDetected, setPhoneDetected] = useState(false);
+
+  // Load Model Once
+  useEffect(() => {
+    const loadModel = async () => {
+      try {
+        await tf.ready();
+        const model = await cocoSsd.load();
+        modelRef.current = model;
+        setModelLoaded(true);
+      } catch (err) {
+        console.error("Failed to load COCO-SSD model", err);
+      }
+    };
+    loadModel();
+  }, []);
 
   useEffect(() => {
     let unlistenPromise: Promise<() => void> | null = null;
@@ -38,8 +69,108 @@ export default function DebugPage() {
       if (unlistenPromise) {
         unlistenPromise.then((unlisten) => unlisten()).catch(console.error);
       }
+      stopCamera();
     };
   }, []);
+
+  const startCamera = async () => {
+    setCameraError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      if (videoRef.current) {
+        setIsCameraActive(true);
+        videoRef.current.srcObject = stream;
+        // Start detection loop once video starts playing
+        videoRef.current.onloadeddata = () => {
+          detectFrame();
+        };
+      }
+    } catch (err: any) {
+      setCameraError(err?.message || "Failed to access webcam. Please check permissions.");
+    }
+  };
+
+  const detectFrame = async () => {
+    if (!videoRef.current || !canvasRef.current || !modelRef.current) return;
+
+    const video = videoRef.current;
+    if (video.readyState === 4) {
+      // Get inferences
+      const predictions = await modelRef.current.detect(video);
+
+      // Process predictions
+      let tempPersonCount = 0;
+      let tempPhoneDetected = false;
+
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d");
+
+      if (ctx) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Ensure styling matches flipped CSS scaling
+        ctx.font = "16px sans-serif";
+        ctx.textBaseline = "top";
+
+        predictions.forEach((prediction) => {
+          if (prediction.class !== "person" && prediction.class !== "cell phone") return;
+
+          const [x, y, width, height] = prediction.bbox;
+
+          if (prediction.class === "person") tempPersonCount++;
+          if (prediction.class === "cell phone") tempPhoneDetected = true;
+
+          // Draw Bounding Box (Consistent safe color for recognized objects)
+          const color = "#22c55e";
+
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 4;
+          // IMPORTANT: Because our video element has scale-x-[-1] (CSS flip), 
+          // the canvas coordinates do NOT match visual space unless we draw normally and flip the canvas via CSS too.
+          ctx.strokeRect(x, y, width, height);
+
+          // Draw Label Background
+          ctx.fillStyle = color;
+          const textWidth = ctx.measureText(prediction.class).width;
+          const textHeight = 24;
+          ctx.fillRect(x, y, textWidth + 8, textHeight);
+
+          // Draw Label Text
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fillText(`${prediction.class} (${Math.round(prediction.score * 100)}%)`, x + 4, y + 4);
+        });
+      }
+
+      setPersonCount(tempPersonCount);
+      setPhoneDetected(tempPhoneDetected);
+    }
+
+    // Continue loop
+    animationFrameRef.current = requestAnimationFrame(detectFrame);
+  };
+
+  const stopCamera = () => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach((track) => track.stop());
+      videoRef.current.srcObject = null;
+      setIsCameraActive(false);
+      setPersonCount(0);
+      setPhoneDetected(false);
+
+      // Clear canvas
+      if (canvasRef.current) {
+        const ctx = canvasRef.current.getContext("2d");
+        if (ctx) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      }
+    }
+  };
 
   const testMirroring = async () => {
     setLoading(true);
@@ -228,6 +359,77 @@ export default function DebugPage() {
                     Awaiting capture...
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4 pt-4 mt-6 border-t border-border">
+            <h2 className="text-xl font-bold border-b border-border pb-2">Live Webcam Feed</h2>
+            <p className="text-sm text-muted-foreground">
+              This tests local HTML5 WebRTC `getUserMedia` to verify the application has camera access and handles streaming correctly.
+            </p>
+
+            <div className="flex flex-col gap-4 pt-2">
+              <div className="relative w-full aspect-video bg-black rounded-lg border border-border overflow-hidden flex items-center justify-center">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  style={{ display: isCameraActive ? "block" : "none" }}
+                  className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
+                />
+                <canvas
+                  ref={canvasRef}
+                  style={{ display: isCameraActive ? "block" : "none" }}
+                  className="absolute inset-0 w-full h-full object-cover pointer-events-none scale-x-[-1]"
+                />
+
+                {!isCameraActive && (
+                  <div className="flex flex-col items-center gap-2 text-muted-foreground opacity-50">
+                    <VideoOff className="w-12 h-12" />
+                    <span className="text-sm font-bold uppercase tracking-widest">Camera Offline</span>
+                  </div>
+                )}
+
+                {cameraError && !isCameraActive && (
+                  <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-4 z-10">
+                    <span className="text-destructive font-mono text-center text-sm">{cameraError}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* AI Detection Violations Flags */}
+              <div className="flex flex-col gap-2">
+                <div className={`flex items-center gap-3 p-3 rounded border font-bold ${personCount > 1 ? "bg-destructive/10 border-destructive text-destructive" : "bg-muted border-border text-muted-foreground"}`}>
+                  <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+                  {personCount > 1 ? `Multiple People Detected! (${personCount})` : `Person Detection (Subject Only): Safe (${personCount})`}
+                </div>
+                <div className={`flex items-center gap-3 p-3 rounded border font-bold ${phoneDetected ? "bg-destructive/10 border-destructive text-destructive" : "bg-muted border-border text-muted-foreground"}`}>
+                  <Camera className="w-5 h-5 flex-shrink-0" />
+                  {phoneDetected ? "Mobile Phone Detected in Frame!" : "No Phones Detected: Safe"}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Button
+                  onClick={startCamera}
+                  disabled={isCameraActive || !modelLoaded}
+                  variant="secondary"
+                  className="w-full font-bold h-12 bg-green-500/10 text-green-500 hover:bg-green-500/20 hover:text-green-400"
+                >
+                  <Video className="w-4 h-4 mr-2" />
+                  {!modelLoaded ? "Loading AI Model..." : "Start Camera"}
+                </Button>
+                <Button
+                  onClick={stopCamera}
+                  disabled={!isCameraActive}
+                  variant="outline"
+                  className="w-full font-bold h-12 border-destructive/20 text-destructive hover:bg-destructive/10"
+                >
+                  <VideoOff className="w-4 h-4 mr-2" />
+                  Stop Camera
+                </Button>
               </div>
             </div>
           </div>
