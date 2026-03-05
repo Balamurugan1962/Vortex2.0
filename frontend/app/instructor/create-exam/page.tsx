@@ -128,7 +128,7 @@ export default function CreateExamPage() {
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <h2 className="text-xl font-bold text-foreground">Question Bank</h2>
-                        <span className="px-2.5 py-0.5 bg-primary/10 text-primary text-[11px] font-black rounded-full uppercase tracking-wider">
+                        <span className="px-2.5 py-0.5 bg-primary/10 text-primary text-[11px] font-black rounded-md uppercase tracking-wider">
                             {questions.length} Items
                         </span>
                     </div>
@@ -210,20 +210,20 @@ export default function CreateExamPage() {
                 <div className="fixed inset-0 bg-background/80 backdrop-blur-md z-[60] flex items-center justify-center p-4">
                     <Card className="w-full max-w-lg bg-card border-border shadow-2xl animate-in zoom-in-95 duration-200">
                         <CardHeader className="text-center pb-6 border-b border-border/50">
-                            <div className="mx-auto w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center mb-4 text-primary border border-primary/20">
+                            <div className="mx-auto w-14 h-14 bg-primary/10 rounded-md flex items-center justify-center mb-4 text-primary border border-primary/20">
                                 <Upload className="w-7 h-7" />
                             </div>
                             <CardTitle className="text-3xl font-black tracking-tight">Bulk Upload</CardTitle>
                             <CardDescription className="font-medium">Upload question bank via CSV or Excel sheet.</CardDescription>
                         </CardHeader>
                         <CardContent className="py-10 space-y-6">
-                            <div className="border-2 border-dashed border-border rounded-2xl p-12 flex flex-col items-center justify-center bg-muted/5 group hover:bg-primary/5 hover:border-primary/50 transition-all cursor-pointer">
+                            <div className="border-2 border-dashed border-border rounded-md p-12 flex flex-col items-center justify-center bg-muted/5 group hover:bg-primary/5 hover:border-primary/50 transition-all cursor-pointer">
                                 <FileType className="w-12 h-12 text-muted-foreground group-hover:text-primary transition-colors mb-4" />
                                 <p className="text-sm font-bold text-foreground">Click to browse or drag and drop</p>
                                 <p className="text-xs text-muted-foreground mt-1">Supports .csv, .xlsx (Max 5MB)</p>
                             </div>
 
-                            <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex gap-3 text-left">
+                            <div className="bg-primary/5 border border-primary/20 rounded-md p-4 flex gap-3 text-left">
                                 <AlertCircle className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                                 <div className="space-y-2">
                                     <p className="text-xs font-bold text-primary uppercase tracking-widest">Formatting Standard</p>
@@ -261,14 +261,14 @@ export default function CreateExamPage() {
                     <Card className="w-full max-w-lg bg-card border-border shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden">
                         <div className="h-2 w-full bg-emerald-500" />
                         <CardHeader className="text-center border-b border-border/50 pb-8 pt-10 px-8">
-                            <div className="mx-auto w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mb-4 text-emerald-600 border border-emerald-500/20 shadow-sm">
+                            <div className="mx-auto w-16 h-16 bg-emerald-500/10 rounded-md flex items-center justify-center mb-4 text-emerald-600 border border-emerald-500/20 shadow-sm">
                                 <CheckCircle className="w-10 h-10" />
                             </div>
                             <CardTitle className="text-3xl text-foreground font-black tracking-tight">Examination Live!</CardTitle>
                             <CardDescription className="text-muted-foreground font-medium pt-1">Your exam is now live. Share the access details with students.</CardDescription>
                         </CardHeader>
                         <CardContent className="py-10 space-y-10 px-10">
-                            <div className="bg-muted/10 border border-border rounded-2xl p-6 text-center shadow-inner">
+                            <div className="bg-muted/10 border border-border rounded-md p-6 text-center shadow-inner">
                                 <h3 className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest mb-4">Instructor Authentication Required</h3>
                                 <p className="text-sm text-foreground font-bold">Session integrity check passed. Access tokens provisioned.</p>
                             </div>
@@ -285,9 +285,9 @@ export default function CreateExamPage() {
                                 <div className="space-y-3">
                                     <Label className="text-muted-foreground text-[10px] uppercase font-black tracking-widest">Exam URL</Label>
                                     <div className="flex gap-2">
-                                        <div className="flex-1 bg-muted/30 border border-border rounded-xl px-4 h-12 text-sm text-foreground font-bold flex items-center gap-3 overflow-hidden whitespace-nowrap shadow-inner">
+                                        <div className="flex-1 bg-muted/30 border border-border rounded-md px-4 h-12 text-sm text-foreground font-bold flex items-center gap-3 overflow-hidden whitespace-nowrap shadow-inner">
                                             <LinkIcon className="w-4 h-4 text-primary shrink-0" />
-                                            vortex-exam.app/join/VX-12345
+                                            offguard.app/join/VX-12345
                                         </div>
                                         <Button size="icon" variant="outline" className="border-border hover:bg-muted h-12 w-12 shrink-0 shadow-sm"><Copy className="h-4 w-4" /></Button>
                                     </div>

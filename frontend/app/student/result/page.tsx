@@ -23,17 +23,17 @@ export default function ExamResultPage() {
                 </CardHeader>
                 <CardContent className="px-12 py-8 space-y-6">
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="p-4 rounded-2xl bg-muted/20 border border-border shadow-inner">
+                        <div className="p-4 rounded-md bg-muted/20 border border-border shadow-inner">
                             <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest mb-1">Status</div>
                             <div className="text-emerald-600 font-black">SUCCESSFUL</div>
                         </div>
-                        <div className="p-4 rounded-2xl bg-muted/20 border border-border shadow-inner">
+                        <div className="p-4 rounded-md bg-muted/20 border border-border shadow-inner">
                             <div className="text-[10px] text-muted-foreground uppercase font-black tracking-widest mb-1">Sync ID</div>
                             <div className="text-primary font-mono text-sm leading-none font-bold">#VX-AZ-99120</div>
                         </div>
                     </div>
 
-                    <div className="bg-primary/5 border border-primary/20 rounded-2xl p-6 flex items-start gap-4 text-left shadow-sm">
+                    <div className="bg-primary/5 border border-primary/20 rounded-md p-6 flex items-start gap-4 text-left shadow-sm">
                         <ShieldCheck className="w-6 h-6 text-primary shrink-0 mt-1" />
                         <div className="space-y-1">
                             <h4 className="font-bold text-primary text-sm">Security Verification Passed</h4>
@@ -60,7 +60,7 @@ export default function ExamResultPage() {
 
             <p className="mt-8 text-muted-foreground/40 text-[10px] uppercase font-black tracking-[0.2em] flex items-center gap-2">
                 <ShieldCheck className="w-3 h-3" />
-                VortexExam Secure Client Environment v0.1.0 (BETA)
+                OffGuard Secure Client Environment v0.1.0 (BETA)
             </p>
         </div>
     );

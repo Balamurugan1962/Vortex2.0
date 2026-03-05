@@ -57,9 +57,7 @@ export default function PermissionsPage() {
         <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center p-6 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/10 via-background to-background">
             <div className="max-w-3xl w-full space-y-8">
                 <div className="text-center space-y-2">
-                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 mb-4 animate-pulse shadow-lg shadow-primary/10">
-                        <ShieldCheck className="w-8 h-8 text-primary" />
-                    </div>
+
                     <h1 className="text-4xl font-extrabold tracking-tight text-foreground">Security & Environment Check</h1>
                     <p className="text-muted-foreground text-lg font-medium">We need to verify your workstation setup before you can start the exam.</p>
                 </div>
@@ -71,7 +69,7 @@ export default function PermissionsPage() {
                                 <CardTitle className="text-foreground font-bold">System Checklist</CardTitle>
                                 <CardDescription className="text-muted-foreground font-medium">Grant all required permissions to proceed.</CardDescription>
                             </div>
-                            <div className="bg-muted px-3 py-1 rounded-full border border-border">
+                            <div className="bg-muted px-3 py-1 rounded-md border border-border">
                                 <span className="text-xs font-bold text-muted-foreground">
                                     {permissions.filter(p => p.status === "granted").length}/{permissions.length} VALIDATED
                                 </span>
@@ -115,7 +113,7 @@ export default function PermissionsPage() {
                                 {Math.round((permissions.filter(p => p.status === "granted").length / permissions.length) * 100)}%
                             </span>
                         </div>
-                        <Progress value={(permissions.filter(p => p.status === "granted").length / permissions.length) * 100} className="h-2 bg-muted/50" />
+                        <Progress value={(permissions.filter(p => p.status === "granted").length / permissions.length) * 100} className="h-2 bg-muted/50 rounded-md" />
 
                         <div className="flex gap-4 mt-4 w-full">
                             <Button variant="outline" className="flex-1 border-border font-bold hover:bg-muted" onClick={verifyAll} disabled={checking}>

@@ -30,10 +30,8 @@ export default function LoginPage() {
 
             <Card className="w-full max-w-md bg-card/80 backdrop-blur-md border-border text-foreground shadow-2xl relative z-10">
                 <CardHeader className="space-y-2 text-center pb-8 border-b border-border/50">
-                    <div className="mx-auto w-14 h-14 bg-primary rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-primary/30">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7 text-primary-foreground"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m9 12 2 2 4-4" /></svg>
-                    </div>
-                    <CardTitle className="text-3xl font-black tracking-tight text-foreground">VortexExam</CardTitle>
+
+                    <CardTitle className="text-3xl font-black tracking-tight text-foreground">OffGuard</CardTitle>
                     <CardDescription className="text-muted-foreground font-medium">Secure Desktop Examination Client</CardDescription>
                 </CardHeader>
                 <form onSubmit={handleLogin}>
@@ -65,7 +63,7 @@ export default function LoginPage() {
                             />
                         </div>
                     </CardContent>
-                    <CardFooter className="flex flex-col space-y-4 pb-12">
+                    <CardFooter className="flex flex-col space-y-4 pb-12 mt-4">
                         <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-lg shadow-primary/20 transition-all h-12 text-lg">
                             Sign In to Environment
                         </Button>

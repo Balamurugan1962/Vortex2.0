@@ -39,7 +39,6 @@ export default function StudentConnectPage() {
                         <div className="h-1.5 w-full bg-primary" />
                         <CardHeader className="pt-8 text-center">
                             <CardTitle className="text-3xl font-black flex items-center justify-center gap-3 text-foreground tracking-tight">
-                                <Terminal className="text-primary w-8 h-8" />
                                 Secure Connection
                             </CardTitle>
                             <CardDescription className="text-muted-foreground font-medium pt-2 max-w-[280px] mx-auto">
@@ -71,7 +70,7 @@ export default function StudentConnectPage() {
                             <div className="space-y-3">
                                 <Label htmlFor="url" className="text-foreground font-bold text-xs uppercase tracking-widest">Exam Direct URL</Label>
                                 <div className="flex gap-2">
-                                    <div className="flex items-center justify-center w-12 bg-muted/30 border border-border rounded-lg text-muted-foreground">
+                                    <div className="flex items-center justify-center w-12 bg-muted/30 border border-border rounded-md text-muted-foreground">
                                         <Globe className="w-4 h-4" />
                                     </div>
                                     <Input
@@ -110,9 +109,9 @@ export default function StudentConnectPage() {
                                     <span className="text-xs font-black text-primary uppercase tracking-wider">Syncing Secure Bundle...</span>
                                     <span className="text-xs text-primary font-mono font-black">{downloadProgress}%</span>
                                 </div>
-                                <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                                <div className="w-full h-1.5 bg-muted rounded-md overflow-hidden">
                                     <div
-                                        className="h-full bg-primary transition-all duration-300 shadow-[0_0_8px_rgba(139,92,246,0.3)]"
+                                        className="h-full bg-primary transition-all duration-300 shadow-[0_0_8px_rgba(139,92,246,0.3)] rounded-md"
                                         style={{ width: `${downloadProgress}%` }}
                                     />
                                 </div>

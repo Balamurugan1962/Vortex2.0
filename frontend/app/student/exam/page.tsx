@@ -128,7 +128,7 @@ export default function ExamPage() {
                             key={q.id}
                             onClick={() => setCurrentIdx(idx)}
                             className={cn(
-                                "h-11 rounded-xl text-xs font-black transition-all flex items-center justify-center border-2",
+                                "h-11 rounded-md text-xs font-black transition-all flex items-center justify-center border-2",
                                 currentIdx === idx
                                     ? "bg-primary border-primary text-primary-foreground shadow-lg shadow-primary/30 scale-105"
                                     : q.state === "answered"
@@ -151,7 +151,7 @@ export default function ExamPage() {
                         </div>
                         <Progress value={20} className="h-1.5 bg-muted" />
                     </div>
-                    <Button onClick={handleSubmit} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-black h-12 shadow-lg shadow-primary/30 rounded-xl transition-all">
+                    <Button onClick={handleSubmit} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-black h-12 shadow-lg shadow-primary/30 rounded-md transition-all">
                         Finalize & Submit
                     </Button>
                 </div>
@@ -161,12 +161,12 @@ export default function ExamPage() {
             <div className="flex-1 flex flex-col min-w-0 bg-background">
                 <header className="h-16 border-b border-border flex items-center justify-between px-6 bg-card box-border z-10">
                     <div className="flex items-center gap-4">
-                        <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-muted-foreground hover:bg-muted rounded-xl">
+                        <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-muted-foreground hover:bg-muted rounded-md">
                             <Menu className="w-5 h-5" />
                         </Button>
                         <div className="flex items-center gap-2">
                             <Lock className="w-4 h-4 text-primary" />
-                            <span className="font-black text-xs uppercase tracking-widest text-foreground">Vortex Enforced Node</span>
+                            <span className="font-black text-xs uppercase tracking-widest text-foreground">OffGuard Enforced Node</span>
                         </div>
                     </div>
 
@@ -182,7 +182,7 @@ export default function ExamPage() {
                             </span>
                         </div>
                         <div className={cn(
-                            "px-4 py-2 rounded-xl border-2 font-mono text-xl font-black shadow-inner flex items-center gap-3",
+                            "px-4 py-2 rounded-md border-2 font-mono text-xl font-black shadow-inner flex items-center gap-3",
                             timeLeft < 300 ? "bg-red-50 border-red-200 text-red-600 animate-pulse" : "bg-muted/30 border-border text-primary"
                         )}>
                             <Timer className="w-5 h-5" />
@@ -219,7 +219,7 @@ export default function ExamPage() {
                                             />
                                             <Label
                                                 htmlFor={`opt-${i}`}
-                                                className="flex items-center p-6 pl-14 rounded-2xl border-2 border-border bg-card hover:bg-primary/5 hover:border-primary/30 transition-all cursor-pointer shadow-sm group-hover:shadow-md text-xl font-medium"
+                                                className="flex items-center p-6 pl-14 rounded-md border-2 border-border bg-card hover:bg-primary/5 hover:border-primary/30 transition-all cursor-pointer shadow-sm group-hover:shadow-md text-xl font-medium"
                                             >
                                                 {opt}
                                             </Label>
@@ -238,7 +238,7 @@ export default function ExamPage() {
                                             />
                                             <Label
                                                 htmlFor={`check-${i}`}
-                                                className="flex items-center p-6 pl-14 rounded-2xl border-2 border-border bg-card hover:bg-primary/5 hover:border-primary/30 transition-all cursor-pointer shadow-sm group-hover:shadow-md text-xl font-medium w-full"
+                                                className="flex items-center p-6 pl-14 rounded-md border-2 border-border bg-card hover:bg-primary/5 hover:border-primary/30 transition-all cursor-pointer shadow-sm group-hover:shadow-md text-xl font-medium w-full"
                                             >
                                                 {opt}
                                             </Label>
@@ -251,7 +251,7 @@ export default function ExamPage() {
                                 <div className="mt-10">
                                     <Input
                                         placeholder="Enter cryptographic hash or literal response..."
-                                        className="bg-card border-2 border-border h-16 text-xl focus-visible:ring-primary shadow-inner font-bold text-foreground px-6 rounded-2xl"
+                                        className="bg-card border-2 border-border h-16 text-xl focus-visible:ring-primary shadow-inner font-bold text-foreground px-6 rounded-md"
                                     />
                                 </div>
                             )}
@@ -260,7 +260,7 @@ export default function ExamPage() {
                                 <div className="mt-10">
                                     <Textarea
                                         placeholder="Detailed structural analysis output..."
-                                        className="bg-card border-2 border-border min-h-[400px] text-lg leading-relaxed focus-visible:ring-primary shadow-inner font-medium text-foreground p-8 rounded-3xl"
+                                        className="bg-card border-2 border-border min-h-[400px] text-lg leading-relaxed focus-visible:ring-primary shadow-inner font-medium text-foreground p-8 rounded-md"
                                     />
                                 </div>
                             )}
@@ -272,7 +272,7 @@ export default function ExamPage() {
                         <div className="flex gap-4">
                             <Button
                                 variant="outline"
-                                className="border-2 border-border hover:bg-muted font-black px-8 h-12 rounded-xl text-xs uppercase tracking-widest transition-all"
+                                className="border-2 border-border hover:bg-muted font-black px-8 h-12 rounded-md text-xs uppercase tracking-widest transition-all"
                                 disabled={currentIdx === 0}
                                 onClick={() => {
                                     setCurrentIdx(prev => prev - 1);
@@ -287,13 +287,13 @@ export default function ExamPage() {
                             <Button variant="ghost" className="text-muted-foreground font-black hover:text-foreground hover:bg-muted px-6 uppercase tracking-widest text-[10px]">
                                 Flush Cache
                             </Button>
-                            <Button onClick={handleSave} className="bg-muted text-foreground font-black px-8 h-12 rounded-xl hover:bg-muted/80 transition-all">
+                            <Button onClick={handleSave} className="bg-muted text-foreground font-black px-8 h-12 rounded-md hover:bg-muted/80 transition-all">
                                 Snapshot Response
                             </Button>
                         </div>
 
                         <Button
-                            className="bg-primary hover:bg-primary/90 text-primary-foreground font-black px-12 h-12 rounded-xl shadow-lg shadow-primary/20 transition-all text-xs uppercase tracking-widest"
+                            className="bg-primary hover:bg-primary/90 text-primary-foreground font-black px-12 h-12 rounded-md shadow-lg shadow-primary/20 transition-all text-xs uppercase tracking-widest"
                             onClick={() => {
                                 if (currentIdx < mockQuestions.length - 1) {
                                     setCurrentIdx(prev => prev + 1);

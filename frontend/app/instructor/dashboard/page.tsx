@@ -51,9 +51,9 @@ export default function InstructorDashboard() {
                     <CardContent>
                         <div className="space-y-4">
                             {[1, 2, 3].map((i) => (
-                                <div key={i} className="flex items-center justify-between p-4 rounded-xl bg-muted/20 border border-border/50 hover:bg-muted/40 transition-all cursor-pointer group">
+                                <div key={i} className="flex items-center justify-between p-4 rounded-md bg-muted/20 border border-border/50 hover:bg-muted/40 transition-all cursor-pointer group">
                                     <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+                                        <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center text-primary font-bold">
                                             {i}
                                         </div>
                                         <div>
@@ -75,7 +75,7 @@ export default function InstructorDashboard() {
                     </CardHeader>
                     <CardContent>
                         <div className="flex flex-col items-center justify-center py-12 text-center">
-                            <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-4">
+                            <div className="w-12 h-12 bg-muted rounded-md flex items-center justify-center mb-4">
                                 <Users className="w-6 h-6 text-muted-foreground" />
                             </div>
                             <h3 className="font-medium text-foreground">No active sessions</h3>
