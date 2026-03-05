@@ -5,6 +5,33 @@ export const getBaseApiUrl = () => {
     return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 };
 
+export const getAuthToken = () => {
+    if (typeof window !== 'undefined') {
+        return localStorage.getItem('vortex_auth_token');
+    }
+    return null;
+};
+
+export const setAuthToken = (token: string) => {
+    if (typeof window !== 'undefined') {
+        localStorage.setItem('vortex_auth_token', token);
+    }
+};
+
+export const logout = () => {
+    if (typeof window !== 'undefined') {
+        localStorage.removeItem('vortex_auth_token');
+    }
+};
+
+const authHeaders = () => {
+    const token = getAuthToken();
+    return {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    };
+};
+
 export async function checkHealth(customUrl?: string) {
     const urlToUse = customUrl || getBaseApiUrl();
     try {
@@ -13,7 +40,6 @@ export async function checkHealth(customUrl?: string) {
             headers: {
                 'Content-Type': 'application/json',
             },
-            // Reduce timeout if possible or just use standard fetch
         });
         if (!response.ok) {
             throw new Error('Backend responded with an error');
@@ -23,4 +49,47 @@ export async function checkHealth(customUrl?: string) {
         console.error('API health check failed:', error);
         throw error;
     }
+}
+
+export async function login(email: string, password: string) {
+    const response = await fetch(`${getBaseApiUrl()}/auth/login`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ email, password })
+    });
+
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Login failed');
+    }
+
+    return await response.json();
+}
+
+export async function register(name: string, email: string, password: string, role?: string) {
+    const response = await fetch(`${getBaseApiUrl()}/auth/register`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ name, email, password, role })
+    });
+
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Registration failed');
+    }
+
+    return await response.json();
+}
+
+export async function getMe() {
+    const response = await fetch(`${getBaseApiUrl()}/auth/me`, {
+        method: 'GET',
+        headers: authHeaders()
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to fetch user profile');
+    }
+
+    return await response.json();
 }

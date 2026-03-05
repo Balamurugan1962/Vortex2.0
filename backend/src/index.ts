@@ -1,7 +1,8 @@
 import express from 'express';
 import cors from 'cors';
-import { Pool } from 'pg';
 import dotenv from 'dotenv';
+import { pool, initDb } from './db';
+import authRoutes from './routes/auth';
 
 dotenv.config();
 
@@ -12,10 +13,11 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Database connection
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@db:5432/vortex',
-});
+// Initialize Database
+initDb();
+
+// Routes
+app.use('/api/auth', authRoutes);
 
 // Test raw DB connection route
 app.get('/api/health', async (req, res) => {
