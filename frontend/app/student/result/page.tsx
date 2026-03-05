@@ -13,7 +13,7 @@ export default function ExamResultPage() {
             <Card className="w-full max-w-xl bg-card backdrop-blur-xl border-border shadow-2xl text-center overflow-hidden">
                 <div className="h-2 w-full bg-emerald-500" />
                 <CardHeader className="pt-12 pb-8">
-                    <div className="mx-auto w-24 h-24 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 text-emerald-600 border border-emerald-500/20 shadow-sm">
+                    <div className="mx-auto w-24 h-24 bg-emerald-500/10 rounded-md flex items-center justify-center mb-6 text-emerald-600 border border-emerald-500/20 shadow-sm">
                         <CheckCircle2 className="w-12 h-12" />
                     </div>
                     <CardTitle className="text-4xl font-black tracking-tight text-foreground">Session Finalized</CardTitle>
@@ -51,7 +51,7 @@ export default function ExamResultPage() {
                         <Button variant="ghost" className="flex-1 text-muted-foreground font-bold hover:text-foreground hover:bg-muted text-xs uppercase tracking-widest">
                             View Session Log
                         </Button>
-                        <Button variant="ghost" className="flex-1 text-muted-foreground font-bold hover:text-red-600 hover:bg-red-500/5 text-xs uppercase tracking-widest">
+                        <Button variant="ghost" size="sm" className="h-9 text-[10px] text-orange-600 font-black uppercase tracking-widest hover:bg-orange-500/5 rounded-md border border-orange-500/20">
                             <LogOut className="w-4 h-4 mr-2" /> Terminate Client
                         </Button>
                     </div>

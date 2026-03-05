@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ShieldCheck, Camera, Mic, MapPin, Maximize, Copy, Monitor, CheckCircle2, AlertCircle, XCircle } from "lucide-react";
+import { ShieldCheck, Camera, Mic, MapPin, Maximize, Copy, Monitor, CheckCircle2, AlertCircle, XCircle, ShieldAlert } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 
 type PermissionStatus = "granted" | "pending" | "denied";
@@ -57,6 +57,15 @@ export default function PermissionsPage() {
         };
 
         syncPermissions();
+
+        const handleFullscreenChange = () => {
+            setPermissions(prev => prev.map(p =>
+                p.id === "fullscreen" ? { ...p, status: !!document.fullscreenElement ? "granted" : "pending" } : p
+            ));
+        };
+
+        document.addEventListener("fullscreenchange", handleFullscreenChange);
+        return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
     }, []);
 
     const checkPermissionStatus = async (id: string): Promise<boolean> => {
@@ -72,20 +81,34 @@ export default function PermissionsPage() {
                     return true;
                 case "location":
                     return new Promise((resolve) => {
-                        navigator.geolocation.getCurrentPosition(() => resolve(true), () => resolve(false));
+                        navigator.geolocation.getCurrentPosition(
+                            () => resolve(true),
+                            () => resolve(false),
+                            { timeout: 5000, enableHighAccuracy: false }
+                        );
                     });
                 case "fullscreen":
-                    if (!document.fullscreenElement) {
-                        await document.documentElement.requestFullscreen();
+                    try {
+                        if (!document.fullscreenElement) {
+                            await document.documentElement.requestFullscreen();
+                        }
+                        return !!document.fullscreenElement;
+                    } catch (e) {
+                        console.error("Fullscreen request failed:", e);
+                        return false;
                     }
-                    return !!document.fullscreenElement;
                 case "screen":
                     const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
                     screenStream.getTracks().forEach(track => track.stop());
                     return true;
                 case "clipboard":
-                    await navigator.clipboard.readText().catch(() => { });
-                    return true;
+                    try {
+                        await navigator.clipboard.readText();
+                        return true;
+                    } catch (e) {
+                        // If it's just a permission prompt we can't auto-resolve, we'll return false
+                        return false;
+                    }
                 default:
                     return true;
             }
@@ -210,6 +233,33 @@ export default function PermissionsPage() {
                     </CardFooter>
                 </Card>
             </div>
+            {/* Fullscreen Restriction Overlay */}
+            {!document.fullscreenElement && permissions.find(p => p.id === "fullscreen")?.status === "granted" && (
+                <div className="fixed inset-0 bg-background/90 backdrop-blur-xl z-[100] flex items-center justify-center p-6 animate-in fade-in duration-500">
+                    <Card className="max-w-md w-full border-red-500/50 shadow-2xl shadow-red-500/20 bg-card/50">
+                        <CardHeader className="text-center pb-4">
+                            <div className="mx-auto w-16 h-16 bg-red-500/10 rounded-md flex items-center justify-center mb-4 text-red-600 border border-red-500/20">
+                                <ShieldAlert className="w-10 h-10" />
+                            </div>
+                            <CardTitle className="text-2xl font-black text-foreground">Security Violation</CardTitle>
+                            <CardDescription className="font-bold text-red-600/80">Fullscreen Mode Terminated</CardDescription>
+                        </CardHeader>
+                        <CardContent className="text-center space-y-4">
+                            <p className="text-sm text-muted-foreground font-medium">
+                                To maintain examination integrity, you must remain in fullscreen mode. Your progress has been restricted until compliance is restored.
+                            </p>
+                        </CardContent>
+                        <CardFooter>
+                            <Button
+                                onClick={() => requestPermission("fullscreen")}
+                                className="w-full bg-red-600 hover:bg-red-700 text-white font-black h-12 rounded-md transition-all shadow-lg shadow-red-500/20"
+                            >
+                                Re-enter Fullscreen Mode
+                            </Button>
+                        </CardFooter>
+                    </Card>
+                </div>
+            )}
         </div>
     );
 }

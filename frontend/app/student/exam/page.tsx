@@ -24,7 +24,8 @@ import {
     Menu,
     X,
     Lock,
-    ExternalLink
+    ExternalLink,
+    Monitor
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -73,6 +74,55 @@ export default function ExamPage() {
     const [lastSaved, setLastSaved] = useState(new Date());
     const [isSaving, setIsSaving] = useState(false);
     const [violations, setViolations] = useState(0);
+    const [isFullscreen, setIsFullscreen] = useState(true);
+    const [isScreenSharing, setIsScreenSharing] = useState(true);
+
+    useEffect(() => {
+        const handleFullscreen = () => {
+            const isFS = !!document.fullscreenElement;
+            setIsFullscreen(isFS);
+            if (!isFS) {
+                setViolations(prev => prev + 1);
+            }
+        };
+
+        const handleSecurityEvents = (e: Event) => {
+            e.preventDefault();
+            setViolations(prev => prev + 1);
+            // Optionally show a toast/notification here
+        };
+
+        const handleFocus = () => {
+            if (!document.hasFocus()) {
+                setViolations(prev => prev + 1);
+            }
+        };
+
+        document.addEventListener("fullscreenchange", handleFullscreen);
+        document.addEventListener("copy", handleSecurityEvents);
+        document.addEventListener("cut", handleSecurityEvents);
+        document.addEventListener("paste", handleSecurityEvents);
+        document.addEventListener("contextmenu", handleSecurityEvents);
+        window.addEventListener("blur", handleFocus);
+
+        // Initial check
+        setIsFullscreen(!!document.fullscreenElement);
+
+        return () => {
+            document.removeEventListener("fullscreenchange", handleFullscreen);
+            document.removeEventListener("copy", handleSecurityEvents);
+            document.removeEventListener("cut", handleSecurityEvents);
+            document.removeEventListener("paste", handleSecurityEvents);
+            document.removeEventListener("contextmenu", handleSecurityEvents);
+            window.removeEventListener("blur", handleFocus);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (violations >= 3) {
+            handleSubmit();
+        }
+    }, [violations]);
 
     const question = mockQuestions[currentIdx];
 
@@ -106,6 +156,28 @@ export default function ExamPage() {
 
     const handleSubmit = () => {
         router.push("/student/result");
+    };
+
+    const reEnterFullscreen = async () => {
+        try {
+            await document.documentElement.requestFullscreen();
+        } catch (e) {
+            console.error("Fullscreen restoration failed", e);
+        }
+    };
+
+    const startScreenShare = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            setIsScreenSharing(true);
+            stream.getTracks()[0].onended = () => {
+                setIsScreenSharing(false);
+                setViolations(prev => prev + 1);
+            };
+        } catch (e) {
+            console.error("Screen share failed", e);
+            setIsScreenSharing(false);
+        }
     };
 
     return (
@@ -167,6 +239,15 @@ export default function ExamPage() {
                         <div className="flex items-center gap-2">
                             <Lock className="w-4 h-4 text-primary" />
                             <span className="font-black text-xs uppercase tracking-widest text-foreground">OffGuard Enforced Node</span>
+                        </div>
+                        <div className={cn(
+                            "ml-4 px-3 py-1 rounded-md border flex items-center gap-2 transition-all duration-300",
+                            violations > 0 ? "bg-red-500/10 border-red-500/20 text-red-600" : "bg-muted border-border text-muted-foreground"
+                        )}>
+                            <AlertTriangle className={cn("w-3.5 h-3.5", violations >= 2 && "animate-pulse")} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">
+                                Violations: {violations}/3
+                            </span>
                         </div>
                     </div>
 
@@ -312,6 +393,66 @@ export default function ExamPage() {
 
             {/* Security Border */}
             <div className="fixed inset-0 pointer-events-none border-t-4 border-primary/40 z-[100] shadow-[inset_0_10px_10px_-10px_rgba(139,92,246,0.3)]" />
+
+            {/* Fullscreen Restriction Overlay */}
+            {!isFullscreen && (
+                <div className="fixed inset-0 bg-background/95 backdrop-blur-2xl z-[200] flex items-center justify-center p-6 transition-all duration-500 animate-in fade-in">
+                    <Card className="max-w-lg w-full border-red-500/50 shadow-[0_0_50px_rgba(239,68,68,0.2)] bg-card/50">
+                        <CardHeader className="text-center pb-6">
+                            <div className="mx-auto w-20 h-20 bg-red-500/10 rounded-md flex items-center justify-center mb-4 text-red-600 border border-red-500/20 animate-pulse">
+                                <ShieldAlert className="w-12 h-12" />
+                            </div>
+                            <CardTitle className="text-3xl font-black text-foreground tracking-tight">Security Lockout</CardTitle>
+                            <CardDescription className="text-red-600 font-bold uppercase tracking-widest text-xs mt-2">Violation Detected: Fullscreen Exited</CardDescription>
+                        </CardHeader>
+                        <CardContent className="text-center space-y-6 px-10">
+                            <div className="bg-red-500/5 border border-red-500/10 rounded-md p-4 space-y-1">
+                                <p className="text-xs font-black text-red-600 uppercase tracking-tighter">Violation Count</p>
+                                <p className="text-4xl font-black text-red-600">{violations}</p>
+                            </div>
+                            <p className="text-sm text-muted-foreground font-medium leading-relaxed">
+                                Continuous monitoring has detected an exit from the secure environment. This incident has been logged. You must return to fullscreen immediately to continue the examination.
+                            </p>
+                        </CardContent>
+                        <CardFooter className="pt-4 pb-10 px-10">
+                            <Button
+                                onClick={reEnterFullscreen}
+                                className="w-full bg-red-600 hover:bg-red-700 text-white font-black h-14 text-lg rounded-md transition-all shadow-lg shadow-red-500/30"
+                            >
+                                Resume Secure Session
+                            </Button>
+                        </CardFooter>
+                    </Card>
+                </div>
+            )}
+
+            {/* Screen Share Restriction Overlay */}
+            {!isScreenSharing && (
+                <div className="fixed inset-0 bg-background/95 backdrop-blur-2xl z-[300] flex items-center justify-center p-6 animate-in fade-in">
+                    <Card className="max-w-lg w-full border-primary/50 shadow-[0_0_50px_rgba(139,92,246,0.2)] bg-card/50">
+                        <CardHeader className="text-center pb-6">
+                            <div className="mx-auto w-20 h-20 bg-primary/10 rounded-md flex items-center justify-center mb-4 text-primary border border-primary/20 animate-bounce">
+                                <Monitor className="w-12 h-12" />
+                            </div>
+                            <CardTitle className="text-3xl font-black text-foreground tracking-tight">Monitoring Required</CardTitle>
+                            <CardDescription className="text-primary font-bold uppercase tracking-widest text-xs mt-2">Active Screen Export Blocked</CardDescription>
+                        </CardHeader>
+                        <CardContent className="text-center space-y-6 px-10">
+                            <p className="text-sm text-muted-foreground font-medium leading-relaxed">
+                                You have stopped sharing your screen. To prevent unauthorized secondary displays or recording software, active screen monitoring must remain enabled throughout the session.
+                            </p>
+                        </CardContent>
+                        <CardFooter className="pt-4 pb-10 px-10">
+                            <Button
+                                onClick={startScreenShare}
+                                className="w-full bg-primary hover:bg-primary/90 text-white font-black h-14 text-lg rounded-md transition-all shadow-lg shadow-primary/30"
+                            >
+                                Re-enable Screen Monitoring
+                            </Button>
+                        </CardFooter>
+                    </Card>
+                </div>
+            )}
         </div>
     );
 }
