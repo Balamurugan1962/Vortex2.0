@@ -6,6 +6,9 @@
     "main"
   ],
   "permissions": [
-    "core:default"
+    "core:default",
+    "clipboard-manager:default",
+    "window-state:default",
+    "shell:default"
   ]
 }

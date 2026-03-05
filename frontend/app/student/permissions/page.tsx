@@ -7,6 +7,23 @@ import { Button } from "@/components/ui/button";
 import { ShieldCheck, Camera, Mic, MapPin, Maximize, Copy, Monitor, CheckCircle2, AlertCircle, XCircle, ShieldAlert } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 
+// Tauri-specific imports (dynamic to prevent server-side errors)
+const getTauriWindow = async () => {
+    if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__) {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        return getCurrentWindow();
+    }
+    return null;
+};
+
+const getTauriClipboard = async () => {
+    if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__) {
+        const { readText } = await import("@tauri-apps/plugin-clipboard-manager");
+        return { readText };
+    }
+    return null;
+};
+
 type PermissionStatus = "granted" | "pending" | "denied";
 
 interface PermissionItem {
@@ -89,10 +106,16 @@ export default function PermissionsPage() {
                     });
                 case "fullscreen":
                     try {
-                        if (!document.fullscreenElement) {
-                            await document.documentElement.requestFullscreen();
+                        const tauriWin = await getTauriWindow();
+                        if (tauriWin) {
+                            await tauriWin.setFullscreen(true);
+                            return await tauriWin.isFullscreen();
+                        } else {
+                            if (!document.fullscreenElement) {
+                                await document.documentElement.requestFullscreen();
+                            }
+                            return !!document.fullscreenElement;
                         }
-                        return !!document.fullscreenElement;
                     } catch (e) {
                         console.error("Fullscreen request failed:", e);
                         return false;
@@ -103,10 +126,14 @@ export default function PermissionsPage() {
                     return true;
                 case "clipboard":
                     try {
+                        const tauriClipboard = await getTauriClipboard();
+                        if (tauriClipboard) {
+                            await tauriClipboard.readText();
+                            return true;
+                        }
                         await navigator.clipboard.readText();
                         return true;
                     } catch (e) {
-                        // If it's just a permission prompt we can't auto-resolve, we'll return false
                         return false;
                     }
                 default:
