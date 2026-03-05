@@ -24,6 +24,20 @@ const getTauriClipboard = async () => {
     return null;
 };
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const getFullscreenStatus = async (): Promise<boolean> => {
+    const tauriWin = await getTauriWindow();
+    if (tauriWin) {
+        try {
+            return await tauriWin.isFullscreen();
+        } catch {
+            return false;
+        }
+    }
+    return !!document.fullscreenElement;
+};
+
 type PermissionStatus = "granted" | "pending" | "denied";
 
 interface PermissionItem {
@@ -36,6 +50,7 @@ interface PermissionItem {
 
 export default function PermissionsPage() {
     const router = useRouter();
+    const [isFullscreenActive, setIsFullscreenActive] = useState<boolean | null>(null);
     const [permissions, setPermissions] = useState<PermissionItem[]>([
         { id: "camera", label: "Camera Access", icon: Camera, status: "pending", description: "Required for proctoring and identity verification." },
         { id: "mic", label: "Microphone Access", icon: Mic, status: "pending", description: "Required to detect unauthorized environmental noise." },
@@ -48,6 +63,8 @@ export default function PermissionsPage() {
     const [checking, setChecking] = useState(false);
 
     useEffect(() => {
+        sessionStorage.setItem("vortex.permissions.granted", "false");
+
         const syncPermissions = async () => {
             const types = ["camera" as PermissionName, "microphone" as PermissionName, "geolocation" as PermissionName];
 
@@ -75,14 +92,33 @@ export default function PermissionsPage() {
 
         syncPermissions();
 
-        const handleFullscreenChange = () => {
+        let isMounted = true;
+        let intervalId: ReturnType<typeof setInterval> | undefined;
+
+        const syncFullscreenStatus = async () => {
+            const isFS = await getFullscreenStatus();
+            if (!isMounted) return;
+            setIsFullscreenActive(isFS);
             setPermissions(prev => prev.map(p =>
-                p.id === "fullscreen" ? { ...p, status: !!document.fullscreenElement ? "granted" : "pending" } : p
+                p.id === "fullscreen" ? { ...p, status: isFS ? "granted" : "pending" } : p
             ));
         };
 
+        const handleFullscreenChange = () => {
+            syncFullscreenStatus();
+        };
+
         document.addEventListener("fullscreenchange", handleFullscreenChange);
-        return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+        syncFullscreenStatus();
+
+        // Tauri fullscreen changes don't always trigger browser fullscreen events.
+        intervalId = setInterval(syncFullscreenStatus, 1000);
+
+        return () => {
+            isMounted = false;
+            document.removeEventListener("fullscreenchange", handleFullscreenChange);
+            if (intervalId) clearInterval(intervalId);
+        };
     }, []);
 
     const checkPermissionStatus = async (id: string): Promise<boolean> => {
@@ -109,12 +145,24 @@ export default function PermissionsPage() {
                         const tauriWin = await getTauriWindow();
                         if (tauriWin) {
                             await tauriWin.setFullscreen(true);
-                            return await tauriWin.isFullscreen();
+                            // Give Tauri window state time to apply before verification.
+                            await delay(150);
+                            for (let attempt = 0; attempt < 5; attempt++) {
+                                const isFS = await tauriWin.isFullscreen();
+                                if (isFS) {
+                                    setIsFullscreenActive(true);
+                                    return true;
+                                }
+                                await delay(120);
+                            }
+                            return false;
                         } else {
                             if (!document.fullscreenElement) {
                                 await document.documentElement.requestFullscreen();
                             }
-                            return !!document.fullscreenElement;
+                            const isFS = !!document.fullscreenElement;
+                            setIsFullscreenActive(isFS);
+                            return isFS;
                         }
                     } catch (e) {
                         console.error("Fullscreen request failed:", e);
@@ -125,17 +173,9 @@ export default function PermissionsPage() {
                     screenStream.getTracks().forEach(track => track.stop());
                     return true;
                 case "clipboard":
-                    try {
-                        const tauriClipboard = await getTauriClipboard();
-                        if (tauriClipboard) {
-                            await tauriClipboard.readText();
-                            return true;
-                        }
-                        await navigator.clipboard.readText();
-                        return true;
-                    } catch (e) {
-                        return false;
-                    }
+                    // Clipboard restrictions are enforced by blocking events in exam page.
+                    // This permission check simply grants the ability to enforce restrictions.
+                    return true;
                 default:
                     return true;
             }
@@ -245,7 +285,10 @@ export default function PermissionsPage() {
                             <Button
                                 className={`flex-1 transition-all duration-500 font-bold shadow-lg ${allGranted ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20' : 'bg-primary hover:bg-primary/90 shadow-primary/20'}`}
                                 disabled={!allGranted}
-                                onClick={() => router.push('/student/exam')}
+                                onClick={() => {
+                                    sessionStorage.setItem("vortex.permissions.granted", "true");
+                                    router.push('/student/exam');
+                                }}
                             >
                                 {allGranted ? "Start Secure Examination" : "Check Readiness"}
                             </Button>
@@ -261,7 +304,7 @@ export default function PermissionsPage() {
                 </Card>
             </div>
             {/* Fullscreen Restriction Overlay */}
-            {typeof document !== 'undefined' && !document.fullscreenElement && permissions.find(p => p.id === "fullscreen")?.status === "granted" && (
+            {isFullscreenActive === false && permissions.find(p => p.id === "fullscreen")?.status === "granted" && (
                 <div className="fixed inset-0 bg-background/90 backdrop-blur-xl z-[100] flex items-center justify-center p-6 animate-in fade-in duration-500">
                     <Card className="max-w-md w-full border-red-500/50 shadow-2xl shadow-red-500/20 bg-card/50">
                         <CardHeader className="text-center pb-4">
