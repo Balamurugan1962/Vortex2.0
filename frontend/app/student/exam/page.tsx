@@ -118,6 +118,8 @@ export default function ExamPage() {
 function ExamContent() {
     const router = useRouter();
     const { addToast } = useToast();
+    const [permissionsVerified, setPermissionsVerified] = useState(false);
+    const [isLoadingPermissions, setIsLoadingPermissions] = useState(true);
     const [currentIdx, setCurrentIdx] = useState(0);
     const [timeLeft, setTimeLeft] = useState(3600);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -125,19 +127,41 @@ function ExamContent() {
     const [isSaving, setIsSaving] = useState(false);
     const [violations, setViolations] = useState(0);
     const [violationCounts, setViolationCounts] = useState<ViolationCounts>({});
+    const [showViolationWarning, setShowViolationWarning] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(true);
     const [isScreenSharing, setIsScreenSharing] = useState(true);
     const [isMonitoringActive, setIsMonitoringActive] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
     const lastViolationTime = useRef<{ [key: string]: number }>({});
+    const lastFullscreenState = useRef<boolean>(true);
+    const isTerminating = useRef<boolean>(false);
 
     // Thresholds
     const TOTAL_VIOLATION_THRESHOLD = 10;
+    const VIOLATION_WARNING_THRESHOLD = 5; // Warning at 5 violations
     const SAME_TYPE_THRESHOLD = 3;
     const VIOLATION_COOLDOWN = 8000; // 8 seconds cooldown between same violation toasts
 
+    // Check permissions gate before allowing exam
+    useEffect(() => {
+        const checkPermissions = async () => {
+            const granted = sessionStorage.getItem("vortex.permissions.granted");
+            if (granted !== "true") {
+                console.log("Permissions not granted, redirecting...");
+                router.push("/student/permissions");
+                return;
+            }
+            setPermissionsVerified(true);
+            setIsLoadingPermissions(false);
+        };
+
+        checkPermissions();
+    }, [router]);
+
     // Start monitoring on mount
     useEffect(() => {
+        if (!permissionsVerified) return;
+
         const startMonitoring = async () => {
             try {
                 await invokeTauriCommand("start_exam_monitoring");
@@ -146,6 +170,9 @@ function ExamContent() {
 
                 // Connect to violation WebSocket
                 connectToViolationWebSocket();
+
+                // Request fullscreen on exam start
+                setTimeout(() => reEnterFullscreen(), 500);
             } catch (error) {
                 console.error("Failed to start monitoring:", error);
                 addToast({
@@ -162,7 +189,7 @@ function ExamContent() {
         return () => {
             stopMonitoring();
         };
-    }, []);
+    }, [permissionsVerified]);
 
     const connectToViolationWebSocket = () => {
         try {
@@ -170,6 +197,12 @@ function ExamContent() {
 
             ws.onopen = () => {
                 console.log("Connected to violation stream");
+                addToast({
+                    title: "Monitoring Active",
+                    description: "Live violation detection enabled",
+                    variant: "default",
+                    duration: 3000,
+                });
             };
 
             ws.onmessage = (event) => {
@@ -187,15 +220,23 @@ function ExamContent() {
                 }
             };
 
-            ws.onerror = (error) => {
-                console.error("WebSocket error:", error);
+            ws.onerror = (event) => {
+                console.error("WebSocket connection error - Backend may not be running on port 8000");
+                console.error("Error details:", event);
+                addToast({
+                    title: "Monitoring Connection Failed",
+                    description: "Could not connect to monitoring service. Ensure backend is running on port 8000.",
+                    variant: "destructive",
+                    duration: 8000,
+                });
             };
 
-            ws.onclose = () => {
-                console.log("Violation stream disconnected");
+            ws.onclose = (event) => {
+                console.log(`Violation stream disconnected (code: ${event.code}, reason: ${event.reason || 'unknown'})`);
                 // Attempt reconnection after 3 seconds
                 setTimeout(() => {
                     if (isMonitoringActive) {
+                        console.log("Attempting to reconnect to violation stream...");
                         connectToViolationWebSocket();
                     }
                 }, 3000);
@@ -203,7 +244,13 @@ function ExamContent() {
 
             wsRef.current = ws;
         } catch (error) {
-            console.error("Failed to connect to violation stream:", error);
+            console.error("Failed to initialize WebSocket connection:", error);
+            addToast({
+                title: "Connection Error",
+                description: "Failed to establish monitoring connection",
+                variant: "destructive",
+                duration: 5000,
+            });
         }
     };
 
@@ -240,13 +287,25 @@ function ExamContent() {
         const typeCount = (violationCounts[event_type] || 0) + 1;
 
         if (totalViolations >= TOTAL_VIOLATION_THRESHOLD) {
+            if (!isTerminating.current) {
+                isTerminating.current = true;
+                addToast({
+                    title: "Exam Terminated",
+                    description: `Total violation threshold exceeded (${totalViolations})`,
+                    variant: "destructive",
+                    duration: 0,
+                });
+                setTimeout(() => handleSubmit("violations_exceeded"), 2000);
+            }
+        } else if (totalViolations === VIOLATION_WARNING_THRESHOLD) {
+            // Show warning modal at 5 violations
+            setShowViolationWarning(true);
             addToast({
-                title: "Exam Terminated",
-                description: `Total violation threshold exceeded (${totalViolations})`,
-                variant: "destructive",
+                title: "⚠️ EXAM WARNING",
+                description: `You have ${totalViolations} violations. Continue and you may be auto-terminated.`,
+                variant: "warning",
                 duration: 0,
             });
-            setTimeout(() => handleSubmit("violations_exceeded"), 2000);
         } else if (typeCount >= SAME_TYPE_THRESHOLD) {
             addToast({
                 title: "Warning",
@@ -272,10 +331,30 @@ function ExamContent() {
     };
 
     useEffect(() => {
-        const handleFullscreen = () => {
-            const isFS = !!document.fullscreenElement;
+        let intervalId: ReturnType<typeof setInterval> | undefined;
+        let isMounted = true;
+
+        const syncFullscreenState = async () => {
+            const tauriWin = await getTauriWindow();
+            let isFS = false;
+
+            if (tauriWin) {
+                try {
+                    isFS = await tauriWin.isFullscreen();
+                } catch (e) {
+                    console.error("Could not check fullscreen state:", e);
+                    isFS = false;
+                }
+            } else {
+                isFS = !!document.fullscreenElement;
+            }
+
+            if (!isMounted) return;
+
             setIsFullscreen(isFS);
-            if (!isFS) {
+
+            const previous = lastFullscreenState.current;
+            if (previous && !isFS) {
                 setViolations(prev => prev + 1);
                 addToast({
                     title: "Security Alert",
@@ -284,17 +363,26 @@ function ExamContent() {
                     duration: 5000,
                 });
             }
+            lastFullscreenState.current = isFS;
         };
 
         const handleSecurityEvents = (e: Event) => {
             e.preventDefault();
+            const eventType = e.type;
+            const description = eventType === "copy" ? "Copy action blocked" : 
+                              eventType === "cut" ? "Cut action blocked" : 
+                              eventType === "paste" ? "Paste action blocked" : 
+                              eventType === "contextmenu" ? "Right-click blocked" : 
+                              "Unauthorized action detected";
+            
             setViolations(prev => prev + 1);
             addToast({
                 title: "Security Alert",
-                description: "Unauthorized action detected",
+                description,
                 variant: "destructive",
                 duration: 5000,
             });
+            console.warn(`Clipboard/context violation: ${eventType} blocked`);
         };
 
         const handleFocus = () => {
@@ -309,25 +397,61 @@ function ExamContent() {
             }
         };
 
-        document.addEventListener("fullscreenchange", handleFullscreen);
+        const handleFullscreenChange = () => {
+            syncFullscreenState();
+        };
+
+        document.addEventListener("fullscreenchange", handleFullscreenChange);
         document.addEventListener("copy", handleSecurityEvents);
         document.addEventListener("cut", handleSecurityEvents);
         document.addEventListener("paste", handleSecurityEvents);
         document.addEventListener("contextmenu", handleSecurityEvents);
         window.addEventListener("blur", handleFocus);
 
-        // Initial check
-        setIsFullscreen(!!document.fullscreenElement);
+        // Initial fullscreen check + Tauri fallback polling.
+        syncFullscreenState();
+        intervalId = setInterval(syncFullscreenState, 1000);
 
         return () => {
-            document.removeEventListener("fullscreenchange", handleFullscreen);
+            isMounted = false;
+            document.removeEventListener("fullscreenchange", handleFullscreenChange);
             document.removeEventListener("copy", handleSecurityEvents);
             document.removeEventListener("cut", handleSecurityEvents);
             document.removeEventListener("paste", handleSecurityEvents);
             document.removeEventListener("contextmenu", handleSecurityEvents);
             window.removeEventListener("blur", handleFocus);
+            if (intervalId) clearInterval(intervalId);
         };
     }, [addToast]);
+    // F11 key handler for fullscreen and keyboard shortcut blocking
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // F11 for fullscreen
+            if (e.key === 'F11') {
+                e.preventDefault();
+                reEnterFullscreen();
+            }
+
+            // Block clipboard keyboard shortcuts: Ctrl+C, Ctrl+V, Ctrl+X
+            if ((e.ctrlKey || e.metaKey) && ['c', 'v', 'x'].includes(e.key.toLowerCase())) {
+                e.preventDefault();
+                const action = e.key.toLowerCase() === 'c' ? 'Copy' : 
+                              e.key.toLowerCase() === 'v' ? 'Paste' : 'Cut';
+                setViolations(prev => prev + 1);
+                addToast({
+                    title: "Security Alert",
+                    description: `${action} keyboard shortcut blocked`,
+                    variant: "destructive",
+                    duration: 5000,
+                });
+                console.warn(`Clipboard shortcut violation: ${action} (Ctrl+${e.key.toUpperCase()}) blocked`);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
 
     useEffect(() => {
         const timer = setInterval(() => {
@@ -368,12 +492,26 @@ function ExamContent() {
         try {
             const tauriWin = await getTauriWindow();
             if (tauriWin) {
+                // Tauri desktop app
                 await tauriWin.setFullscreen(true);
+                setIsFullscreen(true);
             } else {
-                await document.documentElement.requestFullscreen();
+                // Web browser fallback
+                if (!document.fullscreenElement) {
+                    await document.documentElement.requestFullscreen({
+                        navigationUI: "hide"
+                    });
+                }
+                // State will be updated by fullscreenchange event
             }
         } catch (e) {
-            console.error("Fullscreen restoration failed", e);
+            console.error("Fullscreen restoration failed:", e);
+            addToast({
+                title: "Fullscreen Error",
+                description: "Could not enter fullscreen. Please try pressing F11 or allow fullscreen permission.",
+                variant: "destructive",
+                duration: 5000,
+            });
         }
     };
 
@@ -390,6 +528,21 @@ function ExamContent() {
             setIsScreenSharing(false);
         }
     };
+
+    if (isLoadingPermissions) {
+        return (
+            <div className="w-full h-screen flex items-center justify-center bg-background text-foreground">
+                <div className="text-center space-y-4">
+                    <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+                    <p className="text-muted-foreground font-medium">Verifying exam setup...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (!permissionsVerified) {
+        return null;
+    }
 
     return (
         <div className="flex h-screen bg-background text-foreground overflow-hidden select-none font-sans">
@@ -479,7 +632,7 @@ function ExamContent() {
                         )}>
                             <AlertTriangle className={cn("w-3.5 h-3.5", violations >= 2 && "animate-pulse")} />
                             <span className="text-[10px] font-black uppercase tracking-widest">
-                                Violations: {violations}/3
+                                Violations: {violations}/10
                             </span>
                         </div>
                     </div>
@@ -646,13 +799,25 @@ function ExamContent() {
                             <p className="text-sm text-muted-foreground font-medium leading-relaxed">
                                 Continuous monitoring has detected an exit from the secure environment. This incident has been logged. You must return to fullscreen immediately to continue the examination.
                             </p>
+                                                    <div className="bg-muted/50 border border-border rounded-md p-3 text-xs text-left space-y-1">
+                                                        <p className="font-bold">Alternative methods:</p>
+                                                        <p>• Press <kbd className="px-2 py-1 bg-background border rounded text-xs font-mono">F11</kbd> on your keyboard</p>
+                                                        <p>• Click the button below</p>
+                                                    </div>
                         </CardContent>
-                        <CardFooter className="pt-4 pb-10 px-10">
+                        <CardFooter className="pt-4 pb-10 px-10 flex flex-col gap-3">
                             <Button
                                 onClick={reEnterFullscreen}
                                 className="w-full bg-red-600 hover:bg-red-700 text-white font-black h-14 text-lg rounded-md transition-all shadow-lg shadow-red-500/30"
                             >
                                 Resume Secure Session
+                                                        <Button
+                                                            variant="ghost"
+                                                            onClick={() => setIsFullscreen(true)}
+                                                            className="w-full text-xs text-muted-foreground hover:text-foreground"
+                                                        >
+                                                            I am in fullscreen (dismiss this warning)
+                                                        </Button>
                             </Button>
                         </CardFooter>
                     </Card>
@@ -682,6 +847,67 @@ function ExamContent() {
                             >
                                 Re-enable Screen Monitoring
                             </Button>
+                        </CardFooter>
+                    </Card>
+                </div>
+            )}
+
+            {/* Violation Warning Modal - at 5 violations */}
+            {showViolationWarning && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[400] flex items-center justify-center p-6 animate-in fade-in">
+                    <Card className="max-w-lg w-full border-orange-500/60 shadow-[0_0_60px_rgba(249,115,22,0.3)] bg-card/80">
+                        <CardHeader className="text-center pb-6 border-b border-orange-500/20">
+                            <div className="mx-auto w-24 h-24 bg-orange-500/15 rounded-full flex items-center justify-center mb-4 text-orange-600 border-2 border-orange-500/40 animate-pulse">
+                                <AlertTriangle className="w-14 h-14" />
+                            </div>
+                            <CardTitle className="text-3xl font-black text-foreground tracking-tight">Exam Integrity Warning</CardTitle>
+                            <CardDescription className="text-orange-600 font-bold uppercase tracking-widest text-xs mt-2">Suspicious Behavior Detected</CardDescription>
+                        </CardHeader>
+                        <CardContent className="text-center space-y-6 px-10 py-8">
+                            <div className="space-y-3">
+                                <p className="text-lg font-black text-orange-600">{violations} Violations Recorded</p>
+                                <p className="text-sm text-muted-foreground leading-relaxed">
+                                    You are engaging in prohibited exam behavior. Your actions are being monitored and logged.
+                                </p>
+                            </div>
+
+                            <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4 space-y-2 text-left">
+                                <p className="text-xs font-black text-orange-600 uppercase tracking-wider">⚠️ Important Notice:</p>
+                                <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+                                    {Object.entries(violationCounts).map(([type, count]) => (
+                                        <li key={type} className="text-orange-600/80 font-medium">
+                                            {VIOLATION_MESSAGES[type] || type}: {count} time{count !== 1 ? 's' : ''}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+
+                            <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-4">
+                                <p className="text-xs font-bold text-red-600 uppercase tracking-wider mb-2">Threshold Warning:</p>
+                                <div className="flex items-center gap-3">
+                                    <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                                        <div 
+                                            className="h-full bg-gradient-to-r from-orange-500 to-red-600 transition-all duration-300"
+                                            style={{ width: `${(violations / TOTAL_VIOLATION_THRESHOLD) * 100}%` }}
+                                        />
+                                    </div>
+                                    <span className="text-xs font-black text-red-600 whitespace-nowrap">{violations}/{TOTAL_VIOLATION_THRESHOLD}</span>
+                                </div>
+                                <p className="text-xs text-red-600/80 mt-2 font-medium">
+                                    {TOTAL_VIOLATION_THRESHOLD - violations} more violations will auto-terminate your exam.
+                                </p>
+                            </div>
+                        </CardContent>
+                        <CardFooter className="pt-6 pb-10 px-10 flex flex-col gap-3 border-t border-orange-500/20">
+                            <Button
+                                onClick={() => setShowViolationWarning(false)}
+                                className="w-full bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white font-black h-12 rounded-md transition-all shadow-lg shadow-orange-500/30"
+                            >
+                                I Understand - Resume Exam
+                            </Button>
+                            <p className="text-xs text-muted-foreground text-center font-medium">
+                                Continue carefully. Each violation will be recorded.
+                            </p>
                         </CardFooter>
                     </Card>
                 </div>
