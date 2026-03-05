@@ -5,8 +5,12 @@ import { pool, initDb } from './db';
 import authRoutes from './routes/auth';
 import adminRoutes from './routes/admin';
 import settingsRoutes from './routes/settings';
+import questionsRoutes from './routes/questions';
+import submissionsRoutes from './routes/submissions';
 
 dotenv.config();
+
+console.log('Starting Vortex Backend...');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -22,6 +26,9 @@ initDb();
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/questions', questionsRoutes);
+app.use('/api/submissions', submissionsRoutes);
+console.log('Registered /api/questions');
 
 // Test raw DB connection route
 app.get('/api/health', async (req, res) => {
