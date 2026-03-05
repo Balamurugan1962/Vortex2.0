@@ -20,7 +20,10 @@ const auth_1 = __importDefault(require("./routes/auth"));
 const admin_1 = __importDefault(require("./routes/admin"));
 const settings_1 = __importDefault(require("./routes/settings"));
 const questions_1 = __importDefault(require("./routes/questions"));
+const submissions_1 = __importDefault(require("./routes/submissions"));
+const encryption_1 = __importDefault(require("./routes/encryption"));
 dotenv_1.default.config();
+console.log('Starting Vortex Backend...');
 const app = (0, express_1.default)();
 const port = process.env.PORT || 3001;
 // Middleware
@@ -33,6 +36,10 @@ app.use('/api/auth', auth_1.default);
 app.use('/api/admin', admin_1.default);
 app.use('/api/settings', settings_1.default);
 app.use('/api/questions', questions_1.default);
+app.use('/api/submissions', submissions_1.default);
+app.use('/api/encryption', encryption_1.default);
+console.log('Registered /api/questions');
+console.log('Registered /api/encryption');
 // Test raw DB connection route
 app.get('/api/health', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {

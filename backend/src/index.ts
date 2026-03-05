@@ -8,6 +8,7 @@ import settingsRoutes from './routes/settings';
 import questionsRoutes from './routes/questions';
 import submissionsRoutes from './routes/submissions';
 import examsRoutes from './routes/exams';
+import encryptionRoutes from './routes/encryption';
 
 dotenv.config();
 
@@ -29,6 +30,9 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/questions', questionsRoutes);
 app.use('/api/submissions', submissionsRoutes);
+app.use('/api/encryption', encryptionRoutes);
+console.log('Registered /api/questions');
+console.log('Registered /api/encryption');
 app.use('/api/exams', examsRoutes);
 console.log('Registered /api/questions, /api/submissions, /api/exams');
 
