@@ -3,3 +3,5 @@ __pycache__
 venv/
 
 secret.key
+
+exam_logs.db
