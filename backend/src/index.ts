@@ -49,6 +49,6 @@ app.get('/api', (req, res) => {
 });
 
 // Start the server
-app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
+app.listen(port as number, '0.0.0.0', () => {
+    console.log(`Server is running on port ${port} and listening on all interfaces (0.0.0.0)`);
 });
