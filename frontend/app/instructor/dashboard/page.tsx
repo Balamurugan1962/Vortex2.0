@@ -1,11 +1,22 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PlusCircle, FileText, CheckCircle2, Clock, Users, ArrowUpRight, LogOut } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { logout } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
+
+interface Submission {
+    id: number;
+    user_email: string;
+    exam_id: string;
+    violations: number;
+    submitted_at: string;
+    responses: any;
+}
 
 const stats = [
     { label: "Total Exams", value: "12", icon: FileText, color: "text-blue-400" },
@@ -16,6 +27,28 @@ const stats = [
 
 export default function InstructorDashboard() {
     const router = useRouter();
+    const [submissions, setSubmissions] = useState<Submission[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    const fetchSubmissions = async () => {
+        try {
+            const response = await fetch('http://localhost:3002/api/submissions');
+            if (response.ok) {
+                const data = await response.json();
+                setSubmissions(data);
+            }
+        } catch (error) {
+            console.error("Error fetching submissions:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchSubmissions();
+        const interval = setInterval(fetchSubmissions, 5000); // Poll every 5s
+        return () => clearInterval(interval);
+    }, []);
 
     const handleLogout = () => {
         logout();
@@ -88,13 +121,48 @@ export default function InstructorDashboard() {
                         <CardDescription>Live monitoring of ongoing exams.</CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className="flex flex-col items-center justify-center py-12 text-center">
-                            <div className="w-12 h-12 bg-muted rounded-md flex items-center justify-center mb-4">
-                                <Users className="w-6 h-6 text-muted-foreground" />
+                        {isLoading ? (
+                            <div className="flex justify-center py-12">
+                                <PlusCircle className="w-8 h-8 animate-spin text-muted-foreground" />
                             </div>
-                            <h3 className="font-medium text-foreground">No active sessions</h3>
-                            <p className="text-sm text-muted-foreground mt-1">Start an exam to monitor submissions in real-time.</p>
-                        </div>
+                        ) : submissions.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-12 text-center">
+                                <div className="w-12 h-12 bg-muted rounded-md flex items-center justify-center mb-4">
+                                    <Users className="w-6 h-6 text-muted-foreground" />
+                                </div>
+                                <h3 className="font-medium text-foreground">No active sessions</h3>
+                                <p className="text-sm text-muted-foreground mt-1">Start an exam to monitor submissions in real-time.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4 max-h-[400px] overflow-auto pr-2">
+                                {submissions.map((sub) => (
+                                    <div key={sub.id} className="flex items-center justify-between p-4 rounded-md bg-muted/20 border border-border/50 hover:bg-muted/40 transition-all group">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold">
+                                                {sub.user_email.charAt(0).toUpperCase()}
+                                            </div>
+                                            <div>
+                                                <div className="font-semibold text-sm text-foreground">{sub.user_email}</div>
+                                                <div className="text-[10px] text-muted-foreground flex items-center gap-2">
+                                                    <Clock className="w-3 h-3" />
+                                                    {new Date(sub.submitted_at).toLocaleTimeString()}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            {sub.violations > 0 && (
+                                                <Badge variant="destructive" className="h-5 text-[10px] font-bold">
+                                                    {sub.violations} Violations
+                                                </Badge>
+                                            )}
+                                            <Badge variant="outline" className="h-5 text-[10px] font-bold border-emerald-500/30 text-emerald-600 bg-emerald-500/5">
+                                                Submitted
+                                            </Badge>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             </div>

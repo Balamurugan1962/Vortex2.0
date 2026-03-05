@@ -14,22 +14,29 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
-const pg_1 = require("pg");
 const dotenv_1 = __importDefault(require("dotenv"));
+const db_1 = require("./db");
+const auth_1 = __importDefault(require("./routes/auth"));
+const admin_1 = __importDefault(require("./routes/admin"));
+const settings_1 = __importDefault(require("./routes/settings"));
+const questions_1 = __importDefault(require("./routes/questions"));
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const port = process.env.PORT || 3001;
 // Middleware
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
-// Database connection
-const pool = new pg_1.Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@db:5432/vortex',
-});
+// Initialize Database
+(0, db_1.initDb)();
+// Routes
+app.use('/api/auth', auth_1.default);
+app.use('/api/admin', admin_1.default);
+app.use('/api/settings', settings_1.default);
+app.use('/api/questions', questions_1.default);
 // Test raw DB connection route
 app.get('/api/health', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const result = yield pool.query('SELECT NOW()');
+        const result = yield db_1.pool.query('SELECT NOW()');
         res.json({ status: 'ok', time: result.rows[0].now });
     }
     catch (error) {

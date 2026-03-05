@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PlusCircle, Trash2, GripVertical, CheckCircle, Share2, QrCode, Copy, Link as LinkIcon, Upload, FileType, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ToastProvider, useToast } from "@/components/ui/toast";
 
 type QuestionType = "MCQ" | "Multi-select" | "Short Answer" | "Long Answer" | "Scenario";
 
@@ -21,12 +22,22 @@ interface Question {
 }
 
 export default function CreateExamPage() {
+    return (
+        <ToastProvider>
+            <CreateExamContent />
+        </ToastProvider>
+    );
+}
+
+function CreateExamContent() {
+    const { addToast } = useToast();
     const [questions, setQuestions] = useState<Question[]>([
         { id: "1", type: "MCQ", text: "", options: ["", "", ""], correctAnswers: [0] }
     ]);
     const [showShare, setShowShare] = useState(false);
     const [showUpload, setShowUpload] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
+    const [isCreating, setIsCreating] = useState(false);
 
     const addQuestion = () => {
         const newQuestion: Question = {
@@ -43,8 +54,92 @@ export default function CreateExamPage() {
         setQuestions(questions.filter(q => q.id !== id));
     };
 
-    const handleCreate = () => {
-        setShowShare(true);
+    const updateQuestion = (id: string, updates: Partial<Question>) => {
+        setQuestions(questions.map(q => q.id === id ? { ...q, ...updates } : q));
+    };
+
+    const updateOption = (questionId: string, optionIndex: number, value: string) => {
+        setQuestions(questions.map(q => {
+            if (q.id === questionId && q.options) {
+                const newOptions = [...q.options];
+                newOptions[optionIndex] = value;
+                return { ...q, options: newOptions };
+            }
+            return q;
+        }));
+    };
+
+    const addOption = (questionId: string) => {
+        setQuestions(questions.map(q => {
+            if (q.id === questionId && q.options) {
+                return { ...q, options: [...q.options, ""] };
+            }
+            return q;
+        }));
+    };
+
+    const removeOption = (questionId: string, optionIndex: number) => {
+        setQuestions(questions.map(q => {
+            if (q.id === questionId && q.options) {
+                const newOptions = q.options.filter((_, i) => i !== optionIndex);
+                return { ...q, options: newOptions };
+            }
+            return q;
+        }));
+    };
+
+    const toggleCorrectAnswer = (questionId: string, optionIndex: number) => {
+        setQuestions(questions.map(q => {
+            if (q.id === questionId) {
+                const correctAnswers = q.correctAnswers || [];
+                const isSelected = correctAnswers.includes(optionIndex);
+                let newCorrectAnswers;
+                if (q.type === "MCQ") {
+                    newCorrectAnswers = [optionIndex];
+                } else {
+                    newCorrectAnswers = isSelected
+                        ? correctAnswers.filter(i => i !== optionIndex)
+                        : [...correctAnswers, optionIndex];
+                }
+                return { ...q, correctAnswers: newCorrectAnswers };
+            }
+            return q;
+        }));
+    };
+
+    const handleCreate = async () => {
+        setIsCreating(true);
+        try {
+            const response = await fetch('http://localhost:3002/api/questions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(questions),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to save questions');
+            }
+
+            setShowShare(true);
+            addToast({
+                title: "Success",
+                description: "Exam created and questions saved successfully.",
+                variant: "default",
+                duration: 3000,
+            });
+        } catch (error) {
+            console.error('Error saving exam questions:', error);
+            addToast({
+                title: "Error",
+                description: "Failed to save exam questions. Backend might not be running.",
+                variant: "destructive",
+                duration: 5000,
+            });
+        } finally {
+            setIsCreating(false);
+        }
     };
 
     const downloadTemplate = () => {
@@ -85,7 +180,9 @@ export default function CreateExamPage() {
                 </div>
                 <div className="flex gap-3">
                     <Button variant="outline" className="border-border hover:bg-muted font-semibold">Save Draft</Button>
-                    <Button onClick={handleCreate} className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-lg shadow-primary/20 transition-all">Create Exam</Button>
+                    <Button onClick={handleCreate} disabled={isCreating} className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-lg shadow-primary/20 transition-all">
+                        {isCreating ? "Saving..." : "Create Exam"}
+                    </Button>
                 </div>
             </div>
 
@@ -145,7 +242,10 @@ export default function CreateExamPage() {
                             <div className="flex items-center gap-4">
                                 <GripVertical className="w-5 h-5 text-muted-foreground/50 cursor-move" />
                                 <span className="font-bold text-primary">#{index + 1}</span>
-                                <Select defaultValue={q.type}>
+                                <Select
+                                    value={q.type}
+                                    onValueChange={(val: QuestionType) => updateQuestion(q.id, { type: val })}
+                                >
                                     <SelectTrigger className="w-[180px] bg-background border-border h-8 font-semibold text-foreground">
                                         <SelectValue placeholder="Type" />
                                     </SelectTrigger>
@@ -166,30 +266,45 @@ export default function CreateExamPage() {
                             <Input
                                 placeholder="Enter your question here..."
                                 className="bg-background border-border text-foreground font-semibold"
-                                defaultValue={q.text}
+                                value={q.text}
+                                onChange={(e) => updateQuestion(q.id, { text: e.target.value })}
                             />
 
                             {(q.type === "MCQ" || q.type === "Multi-select") && (
                                 <div className="space-y-3 pl-8 border-l-2 border-muted mt-4">
                                     {q.options?.map((opt, optIndex) => (
                                         <div key={optIndex} className="flex items-center gap-3">
-                                            <div className={cn(
-                                                "w-4 h-4 rounded-full border border-border",
-                                                q.correctAnswers?.includes(optIndex) ? "bg-primary border-primary shadow-sm shadow-primary/30" : "bg-background shadow-inner"
-                                            )} />
+                                            <div
+                                                onClick={() => toggleCorrectAnswer(q.id, optIndex)}
+                                                className={cn(
+                                                    "w-4 h-4 rounded-full border border-border cursor-pointer transition-all",
+                                                    q.correctAnswers?.includes(optIndex) ? "bg-primary border-primary shadow-sm shadow-primary/30" : "bg-background shadow-inner"
+                                                )}
+                                            />
                                             <Input
                                                 placeholder={`Option ${optIndex + 1}`}
                                                 className="bg-background border-border text-foreground h-9"
-                                                defaultValue={opt}
+                                                value={opt}
+                                                onChange={(e) => updateOption(q.id, optIndex, e.target.value)}
                                             />
                                             {optIndex > 1 && (
-                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 text-muted-foreground hover:text-red-500"
+                                                    onClick={() => removeOption(q.id, optIndex)}
+                                                >
                                                     <Trash2 className="w-3 h-3" />
                                                 </Button>
                                             )}
                                         </div>
                                     ))}
-                                    <Button variant="ghost" size="sm" className="text-primary hover:text-primary/80 font-bold h-8 mt-2">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-primary hover:text-primary/80 font-bold h-8 mt-2"
+                                        onClick={() => addOption(q.id)}
+                                    >
                                         <PlusCircle className="mr-2 h-3 w-3" />
                                         Add Option
                                     </Button>

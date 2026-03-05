@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ToastProvider, useToast } from "@/components/ui/toast";
+import { getMe } from "@/lib/api";
 import {
     Timer,
     Wifi,
@@ -26,7 +27,8 @@ import {
     X,
     Lock,
     ExternalLink,
-    Monitor
+    Monitor,
+    CheckCircle2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -107,6 +109,15 @@ const mockQuestions = [
     },
 ];
 
+interface Question {
+    id: string;
+    type: string;
+    question: string;
+    options: string[];
+    correctAnswers?: number[];
+    state?: string;
+}
+
 export default function ExamPage() {
     return (
         <ToastProvider>
@@ -120,6 +131,8 @@ function ExamContent() {
     const { addToast } = useToast();
     const [permissionsVerified, setPermissionsVerified] = useState(false);
     const [isLoadingPermissions, setIsLoadingPermissions] = useState(true);
+    const [questions, setQuestions] = useState<Question[]>([]);
+    const [isLoadingQuestions, setIsLoadingQuestions] = useState(true);
     const [currentIdx, setCurrentIdx] = useState(0);
     const [timeLeft, setTimeLeft] = useState(3600);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -135,6 +148,10 @@ function ExamContent() {
     const lastViolationTime = useRef<{ [key: string]: number }>({});
     const lastFullscreenState = useRef<boolean>(true);
     const isTerminating = useRef<boolean>(false);
+    const [userEmail, setUserEmail] = useState<string | null>(null);
+    const [hasCheckedSubmission, setHasCheckedSubmission] = useState(false);
+    const [isAlreadySubmitted, setIsAlreadySubmitted] = useState(false);
+    const [responses, setResponses] = useState<{ [key: string]: any }>({});
 
     // Thresholds
     const TOTAL_VIOLATION_THRESHOLD = 10;
@@ -151,12 +168,78 @@ function ExamContent() {
                 router.push("/student/permissions");
                 return;
             }
-            setPermissionsVerified(true);
-            setIsLoadingPermissions(false);
+
+            try {
+                // Get User Info
+                const userData = await getMe();
+                setUserEmail(userData.email);
+
+                // Check if already submitted
+                const checkRes = await fetch(`http://localhost:3002/api/submissions/check?email=${userData.email}`);
+                const checkData = await checkRes.json();
+
+                if (checkData.hasSubmitted) {
+                    setIsAlreadySubmitted(true);
+                    addToast({
+                        title: "Security Notice",
+                        description: "You have already submitted this examination.",
+                        variant: "warning",
+                        duration: 8000
+                    });
+                }
+            } catch (err) {
+                console.error("Failed to verify user/submission status:", err);
+            } finally {
+                setPermissionsVerified(true);
+                setIsLoadingPermissions(false);
+                setHasCheckedSubmission(true);
+            }
         };
 
         checkPermissions();
-    }, [router]);
+    }, [router, addToast]);
+
+    // Fetch questions
+    useEffect(() => {
+        if (!permissionsVerified) return;
+
+        const fetchQuestions = async () => {
+            try {
+                const response = await fetch('http://localhost:3002/api/questions');
+                if (!response.ok) throw new Error('Failed to fetch questions');
+                const data = await response.json();
+
+                if (data.length === 0) {
+                    setQuestions(mockQuestions); // Fallback if no questions in DB
+                } else {
+                    // Map DB format to expected frontend format
+                    const mappedData = data.map((q: any) => ({
+                        id: q.id.toString(),
+                        type: q.type,
+                        question: q.question, // Database uses 'question'
+                        options: Array.isArray(q.options) ? q.options : (typeof q.options === 'string' ? JSON.parse(q.options) : []),
+                        correctAnswers: Array.isArray(q.correct_answers) ? q.correct_answers : (typeof q.correct_answers === 'string' ? JSON.parse(q.correct_answers) : []),
+                        state: "not-visited"
+                    }));
+                    console.log("Mapped questions:", mappedData);
+                    setQuestions(mappedData);
+                }
+            } catch (error) {
+                console.error("Error fetching questions:", error);
+                setQuestions(mockQuestions); // Fallback on error
+                addToast({
+                    title: "Connection Error",
+                    description: "Failed to load questions from server. Using offline mock data.",
+                    variant: "warning",
+                    duration: 5000,
+                });
+            } finally {
+                setIsLoadingQuestions(false);
+            }
+        };
+
+        fetchQuestions();
+    }, [permissionsVerified, addToast]);
 
     // Start monitoring on mount
     useEffect(() => {
@@ -208,10 +291,10 @@ function ExamContent() {
             ws.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data) as Violation;
-                    
+
                     // Skip ping messages
                     if (data.type === "ping") return;
-                    
+
                     if (data.event_type && data.type === "violation") {
                         handleViolation(data);
                     }
@@ -369,12 +452,12 @@ function ExamContent() {
         const handleSecurityEvents = (e: Event) => {
             e.preventDefault();
             const eventType = e.type;
-            const description = eventType === "copy" ? "Copy action blocked" : 
-                              eventType === "cut" ? "Cut action blocked" : 
-                              eventType === "paste" ? "Paste action blocked" : 
-                              eventType === "contextmenu" ? "Right-click blocked" : 
-                              "Unauthorized action detected";
-            
+            const description = eventType === "copy" ? "Copy action blocked" :
+                eventType === "cut" ? "Cut action blocked" :
+                    eventType === "paste" ? "Paste action blocked" :
+                        eventType === "contextmenu" ? "Right-click blocked" :
+                            "Unauthorized action detected";
+
             setViolations(prev => prev + 1);
             addToast({
                 title: "Security Alert",
@@ -435,8 +518,8 @@ function ExamContent() {
             // Block clipboard keyboard shortcuts: Ctrl+C, Ctrl+V, Ctrl+X
             if ((e.ctrlKey || e.metaKey) && ['c', 'v', 'x'].includes(e.key.toLowerCase())) {
                 e.preventDefault();
-                const action = e.key.toLowerCase() === 'c' ? 'Copy' : 
-                              e.key.toLowerCase() === 'v' ? 'Paste' : 'Cut';
+                const action = e.key.toLowerCase() === 'c' ? 'Copy' :
+                    e.key.toLowerCase() === 'v' ? 'Paste' : 'Cut';
                 setViolations(prev => prev + 1);
                 addToast({
                     title: "Security Alert",
@@ -467,13 +550,25 @@ function ExamContent() {
         return () => clearInterval(timer);
     }, []);
 
+    const handleAnswerChange = (questionId: string, answer: any) => {
+        setResponses(prev => ({
+            ...prev,
+            [questionId]: answer
+        }));
+
+        // Update question state to "answered"
+        setQuestions(prev => prev.map(q =>
+            q.id === questionId ? { ...q, state: "answered" } : q
+        ));
+    };
+
     const formatTime = (seconds: number) => {
         const m = Math.floor(seconds / 60);
         const s = seconds % 60;
         return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     };
 
-    const question = mockQuestions[currentIdx];
+    const question = questions[currentIdx];
 
     const handleSave = () => {
         setIsSaving(true);
@@ -484,8 +579,41 @@ function ExamContent() {
     };
 
     const handleSubmit = async (reason: string = "completed") => {
-        await stopMonitoring();
-        router.push(`/student/result?reason=${reason}&violations=${violations}`);
+        setIsSaving(true);
+        try {
+            await stopMonitoring();
+
+            // Post submission to backend
+            const submissionData = {
+                user_email: userEmail,
+                exam_id: 'default', // Can be dynamic later
+                responses: responses,
+                violations: violations,
+                violation_details: violationCounts
+            };
+
+            const response = await fetch('http://localhost:3002/api/submissions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(submissionData)
+            });
+
+            if (!response.ok && response.status !== 409) {
+                throw new Error('Failed to save submission');
+            }
+
+            router.push(`/student/result?reason=${reason}&violations=${violations}`);
+        } catch (error) {
+            console.error("Submission failed:", error);
+            addToast({
+                title: "Submission Error",
+                description: "Failed to sync your results. Please contact the invigilator.",
+                variant: "destructive",
+                duration: 0
+            });
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const reEnterFullscreen = async () => {
@@ -529,18 +657,45 @@ function ExamContent() {
         }
     };
 
-    if (isLoadingPermissions) {
+    if (isLoadingQuestions || !hasCheckedSubmission) {
         return (
             <div className="w-full h-screen flex items-center justify-center bg-background text-foreground">
                 <div className="text-center space-y-4">
                     <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-                    <p className="text-muted-foreground font-medium">Verifying exam setup...</p>
+                    <p className="text-muted-foreground font-medium">Synchronizing examination environment...</p>
                 </div>
             </div>
         );
     }
 
-    if (!permissionsVerified) {
+    if (isAlreadySubmitted) {
+        return (
+            <div className="w-full h-screen flex items-center justify-center bg-background text-foreground p-6">
+                <Card className="max-w-md w-full border-primary/20 bg-card/50 backdrop-blur-md">
+                    <CardHeader className="text-center">
+                        <div className="mx-auto w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mb-4 text-emerald-500 border border-emerald-500/20">
+                            <CheckCircle2 className="w-10 h-10" />
+                        </div>
+                        <CardTitle className="text-2xl font-black">Exam Completed</CardTitle>
+                        <CardDescription>You have already submitted this examination.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="text-center text-sm text-muted-foreground">
+                        Your responses have been securely logged. Multiple submissions are not permitted for this session.
+                    </CardContent>
+                    <CardFooter>
+                        <Button
+                            className="w-full bg-primary hover:bg-primary/90 font-bold"
+                            onClick={() => router.push('/student/connect')}
+                        >
+                            Return to Connection Hub
+                        </Button>
+                    </CardFooter>
+                </Card>
+            </div>
+        );
+    }
+
+    if (!permissionsVerified || questions.length === 0) {
         return null;
     }
 
@@ -559,9 +714,9 @@ function ExamContent() {
                 </div>
 
                 <div className="flex-1 overflow-auto p-6 grid grid-cols-4 gap-3 content-start">
-                    {mockQuestions.map((q, idx) => (
+                    {questions.map((q, idx) => (
                         <button
-                            key={q.id}
+                            key={q.id || idx}
                             onClick={() => setCurrentIdx(idx)}
                             className={cn(
                                 "h-11 rounded-md text-xs font-black transition-all flex items-center justify-center border-2",
@@ -601,13 +756,13 @@ function ExamContent() {
                             ))}
                         </div>
                     )}
-                    
+
                     <div className="space-y-2">
                         <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-tighter">
                             <span className="text-muted-foreground">Progress Tracking</span>
-                            <span className="text-primary">{Math.round((1 / 5) * 100)}%</span>
+                            <span className="text-primary">{Math.round(((currentIdx + 1) / questions.length) * 100)}%</span>
                         </div>
-                        <Progress value={20} className="h-1.5 bg-muted" />
+                        <Progress value={((currentIdx + 1) / questions.length) * 100} className="h-1.5 bg-muted" />
                     </div>
                     <Button onClick={() => handleSubmit("manual")} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-black h-12 shadow-lg shadow-primary/30 rounded-md transition-all">
                         Finalize & Submit
@@ -676,7 +831,11 @@ function ExamContent() {
                             </h2>
 
                             {question.type === "MCQ" && (
-                                <RadioGroup className="grid gap-4 mt-10">
+                                <RadioGroup
+                                    className="grid gap-4 mt-10"
+                                    value={responses[question.id]?.toString()}
+                                    onValueChange={(val) => handleAnswerChange(question.id, parseInt(val))}
+                                >
                                     {question.options?.map((opt, i) => (
                                         <div key={i} className="relative group">
                                             <RadioGroupItem
@@ -702,6 +861,14 @@ function ExamContent() {
                                             <Checkbox
                                                 id={`check-${i}`}
                                                 className="absolute left-6 top-1/2 -translate-y-1/2 z-10 border-primary data-[state=checked]:bg-primary"
+                                                checked={Array.isArray(responses[question.id]) && responses[question.id].includes(i)}
+                                                onCheckedChange={(checked) => {
+                                                    const currentAnswers = Array.isArray(responses[question.id]) ? responses[question.id] : [];
+                                                    const nextAnswers = checked
+                                                        ? [...currentAnswers, i]
+                                                        : currentAnswers.filter((val: number) => val !== i);
+                                                    handleAnswerChange(question.id, nextAnswers);
+                                                }}
                                             />
                                             <Label
                                                 htmlFor={`check-${i}`}
@@ -719,6 +886,8 @@ function ExamContent() {
                                     <Input
                                         placeholder="Enter cryptographic hash or literal response..."
                                         className="bg-card border-2 border-border h-16 text-xl focus-visible:ring-primary shadow-inner font-bold text-foreground px-6 rounded-md"
+                                        value={responses[question.id] || ""}
+                                        onChange={(e) => handleAnswerChange(question.id, e.target.value)}
                                     />
                                 </div>
                             )}
@@ -762,7 +931,7 @@ function ExamContent() {
                         <Button
                             className="bg-primary hover:bg-primary/90 text-primary-foreground font-black px-12 h-12 rounded-md shadow-lg shadow-primary/20 transition-all text-xs uppercase tracking-widest"
                             onClick={() => {
-                                if (currentIdx < mockQuestions.length - 1) {
+                                if (currentIdx < questions.length - 1) {
                                     setCurrentIdx(prev => prev + 1);
                                     handleSave();
                                 } else {
@@ -770,8 +939,8 @@ function ExamContent() {
                                 }
                             }}
                         >
-                            {currentIdx === mockQuestions.length - 1 ? "End Session" : "Next Module"}
-                            {currentIdx < mockQuestions.length - 1 && <ChevronRight className="w-4 h-4 ml-2" />}
+                            {currentIdx === questions.length - 1 ? "End Session" : "Next Module"}
+                            {currentIdx < questions.length - 1 && <ChevronRight className="w-4 h-4 ml-2" />}
                         </Button>
                     </div>
                 </main>
@@ -799,11 +968,11 @@ function ExamContent() {
                             <p className="text-sm text-muted-foreground font-medium leading-relaxed">
                                 Continuous monitoring has detected an exit from the secure environment. This incident has been logged. You must return to fullscreen immediately to continue the examination.
                             </p>
-                                                    <div className="bg-muted/50 border border-border rounded-md p-3 text-xs text-left space-y-1">
-                                                        <p className="font-bold">Alternative methods:</p>
-                                                        <p>• Press <kbd className="px-2 py-1 bg-background border rounded text-xs font-mono">F11</kbd> on your keyboard</p>
-                                                        <p>• Click the button below</p>
-                                                    </div>
+                            <div className="bg-muted/50 border border-border rounded-md p-3 text-xs text-left space-y-1">
+                                <p className="font-bold">Alternative methods:</p>
+                                <p>• Press <kbd className="px-2 py-1 bg-background border rounded text-xs font-mono">F11</kbd> on your keyboard</p>
+                                <p>• Click the button below</p>
+                            </div>
                         </CardContent>
                         <CardFooter className="pt-4 pb-10 px-10 flex flex-col gap-3">
                             <Button
@@ -811,13 +980,13 @@ function ExamContent() {
                                 className="w-full bg-red-600 hover:bg-red-700 text-white font-black h-14 text-lg rounded-md transition-all shadow-lg shadow-red-500/30"
                             >
                                 Resume Secure Session
-                                                        <Button
-                                                            variant="ghost"
-                                                            onClick={() => setIsFullscreen(true)}
-                                                            className="w-full text-xs text-muted-foreground hover:text-foreground"
-                                                        >
-                                                            I am in fullscreen (dismiss this warning)
-                                                        </Button>
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => setIsFullscreen(true)}
+                                    className="w-full text-xs text-muted-foreground hover:text-foreground"
+                                >
+                                    I am in fullscreen (dismiss this warning)
+                                </Button>
                             </Button>
                         </CardFooter>
                     </Card>
@@ -886,7 +1055,7 @@ function ExamContent() {
                                 <p className="text-xs font-bold text-red-600 uppercase tracking-wider mb-2">Threshold Warning:</p>
                                 <div className="flex items-center gap-3">
                                     <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                                        <div 
+                                        <div
                                             className="h-full bg-gradient-to-r from-orange-500 to-red-600 transition-all duration-300"
                                             style={{ width: `${(violations / TOTAL_VIOLATION_THRESHOLD) * 100}%` }}
                                         />
