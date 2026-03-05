@@ -93,3 +93,58 @@ export async function getMe() {
 
     return await response.json();
 }
+
+export async function getSettings() {
+    const response = await fetch(`${getBaseApiUrl()}/settings`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    });
+
+    if (!response.ok) {
+        return { registration_enabled: true }; // default fallback 
+    }
+
+    return await response.json();
+}
+
+export async function getAdminUsers() {
+    const response = await fetch(`${getBaseApiUrl()}/admin/users`, {
+        method: 'GET',
+        headers: authHeaders()
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to fetch users');
+    }
+
+    return await response.json();
+}
+
+export async function toggleRegistration(enabled: boolean) {
+    const response = await fetch(`${getBaseApiUrl()}/admin/settings`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({ registration_enabled: enabled })
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to update registration settings');
+    }
+
+    return await response.json();
+}
+
+export async function deleteUser(id: string | number) {
+    const response = await fetch(`${getBaseApiUrl()}/admin/users/${id}`, {
+        method: 'DELETE',
+        headers: authHeaders()
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to delete user');
+    }
+
+    return await response.json();
+}

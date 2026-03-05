@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,10 +17,23 @@ export default function LoginPage() {
     const [name, setName] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [role, setRole] = useState("student"); // "student" or "instructor"
+
+    // Settings
+    const [registrationEnabled, setRegistrationEnabled] = useState(true);
 
     // UI State
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // Initial load: Check if registration is enabled
+    useEffect(() => {
+        import("@/lib/api").then(api => {
+            api.getSettings().then(settings => {
+                setRegistrationEnabled(settings.registration_enabled !== false);
+            }).catch(console.error);
+        });
+    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -31,8 +44,8 @@ export default function LoginPage() {
             let data;
 
             if (isRegistering) {
-                // All new web registrations default to student role
-                data = await register(name, email, password);
+                // Submit explicitly selected role
+                data = await register(name, email, password, role);
             } else {
                 data = await login(email, password);
             }
@@ -40,7 +53,9 @@ export default function LoginPage() {
             setAuthToken(data.token);
 
             // Access correct dashboard based on real database role
-            if (data.user.role === "instructor" || data.user.role === "admin") {
+            if (data.user.role === "admin") {
+                router.push("/admin/dashboard");
+            } else if (data.user.role === "instructor") {
                 router.push("/instructor/dashboard");
             } else {
                 router.push("/student/connect");
@@ -73,18 +88,33 @@ export default function LoginPage() {
                         )}
 
                         {isRegistering && (
-                            <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
-                                <Label htmlFor="name" className="text-foreground font-semibold">Full Name</Label>
-                                <Input
-                                    id="name"
-                                    type="text"
-                                    placeholder="John Doe"
-                                    required={isRegistering}
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    disabled={isLoading}
-                                    className="bg-background border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-primary h-11"
-                                />
+                            <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                <div className="space-y-2">
+                                    <Label htmlFor="name" className="text-foreground font-semibold">Full Name</Label>
+                                    <Input
+                                        id="name"
+                                        type="text"
+                                        placeholder="John Doe"
+                                        required={isRegistering}
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                        disabled={isLoading}
+                                        className="bg-background border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-primary h-11"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="role" className="text-foreground font-semibold">Account Type</Label>
+                                    <select
+                                        id="role"
+                                        value={role}
+                                        onChange={(e) => setRole(e.target.value)}
+                                        disabled={isLoading}
+                                        className="flex h-11 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        <option value="student">Student</option>
+                                        <option value="instructor">Instructor</option>
+                                    </select>
+                                </div>
                             </div>
                         )}
 
@@ -128,16 +158,24 @@ export default function LoginPage() {
                             )}
                         </Button>
 
-                        <div className="pt-2 text-center text-sm">
-                            <button
-                                type="button"
-                                onClick={() => { setIsRegistering(!isRegistering); setError(null); }}
-                                disabled={isLoading}
-                                className="text-muted-foreground hover:text-primary transition-colors font-medium border-b border-transparent hover:border-primary"
-                            >
-                                {isRegistering ? "Already have an account? Sign In" : "Need access? Register here"}
-                            </button>
-                        </div>
+                        {registrationEnabled && (
+                            <div className="pt-2 text-center text-sm">
+                                <button
+                                    type="button"
+                                    onClick={() => { setIsRegistering(!isRegistering); setError(null); }}
+                                    disabled={isLoading}
+                                    className="text-muted-foreground hover:text-primary transition-colors font-medium border-b border-transparent hover:border-primary"
+                                >
+                                    {isRegistering ? "Already have an account? Sign In" : "Need access? Register here"}
+                                </button>
+                            </div>
+                        )}
+
+                        {!registrationEnabled && !isRegistering && (
+                            <div className="pt-2 text-center text-xs text-muted-foreground">
+                                Public registration is currently disabled by administrators.
+                            </div>
+                        )}
                     </CardFooter>
                 </form>
             </Card>

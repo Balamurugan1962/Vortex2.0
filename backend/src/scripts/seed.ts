@@ -27,7 +27,16 @@ const seedDatabase = async () => {
             ['Demo Student', 'student@demo.com', passwordHash, 'student']
         );
 
+        // Demo Admin
+        await pool.query(
+            `INSERT INTO users (name, email, password_hash, role) 
+             VALUES ($1, $2, $3, $4) 
+             ON CONFLICT (email) DO NOTHING`,
+            ['Demo Admin', 'admin@demo.com', passwordHash, 'admin']
+        );
+
         console.log('Successfully seeded demo accounts!');
+        console.log('Admin: admin@demo.com / password123');
         console.log('Instructor: instructor@demo.com / password123');
         console.log('Student: student@demo.com / password123');
 

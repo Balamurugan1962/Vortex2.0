@@ -2,8 +2,10 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, FileText, CheckCircle2, Clock, Users, ArrowUpRight } from "lucide-react";
+import { PlusCircle, FileText, CheckCircle2, Clock, Users, ArrowUpRight, LogOut } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { logout } from "@/lib/api";
 
 const stats = [
     { label: "Total Exams", value: "12", icon: FileText, color: "text-blue-400" },
@@ -13,6 +15,13 @@ const stats = [
 ];
 
 export default function InstructorDashboard() {
+    const router = useRouter();
+
+    const handleLogout = () => {
+        logout();
+        router.push("/login");
+    };
+
     return (
         <div className="p-8 space-y-8">
             <div className="flex items-center justify-between">
@@ -20,12 +29,17 @@ export default function InstructorDashboard() {
                     <h1 className="text-3xl font-bold tracking-tight text-foreground">Instructor Dashboard</h1>
                     <p className="text-muted-foreground mt-1">Manage your examinations and monitor student progress.</p>
                 </div>
-                <Button asChild className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20">
-                    <Link href="/instructor/create-exam">
-                        <PlusCircle className="mr-2 h-4 w-4" />
-                        Create New Exam
-                    </Link>
-                </Button>
+                <div className="flex items-center gap-4">
+                    <Button variant="outline" onClick={handleLogout} className="flex items-center gap-2">
+                        <LogOut className="w-4 h-4" /> Sign Out
+                    </Button>
+                    <Button asChild className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20">
+                        <Link href="/instructor/create-exam">
+                            <PlusCircle className="mr-2 h-4 w-4" />
+                            Create New Exam
+                        </Link>
+                    </Button>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

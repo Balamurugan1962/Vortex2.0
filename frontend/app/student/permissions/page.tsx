@@ -261,7 +261,7 @@ export default function PermissionsPage() {
                 </Card>
             </div>
             {/* Fullscreen Restriction Overlay */}
-            {!document.fullscreenElement && permissions.find(p => p.id === "fullscreen")?.status === "granted" && (
+            {typeof document !== 'undefined' && !document.fullscreenElement && permissions.find(p => p.id === "fullscreen")?.status === "granted" && (
                 <div className="fixed inset-0 bg-background/90 backdrop-blur-xl z-[100] flex items-center justify-center p-6 animate-in fade-in duration-500">
                     <Card className="max-w-md w-full border-red-500/50 shadow-2xl shadow-red-500/20 bg-card/50">
                         <CardHeader className="text-center pb-4">
