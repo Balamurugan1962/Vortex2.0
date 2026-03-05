@@ -18,6 +18,11 @@ export default function DebugPage() {
   const [loading, setLoading] = useState(false);
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
 
+  // Process State
+  const [processes, setProcesses] = useState<any[]>([]);
+  const [processSearch, setProcessSearch] = useState("");
+  const [processLoading, setProcessLoading] = useState(false);
+
   // Camera State
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -64,6 +69,7 @@ export default function DebugPage() {
     };
 
     setupListener();
+    refreshProcesses();
 
     return () => {
       if (unlistenPromise) {
@@ -72,6 +78,31 @@ export default function DebugPage() {
       stopCamera();
     };
   }, []);
+
+  const refreshProcesses = async () => {
+    setProcessLoading(true);
+    try {
+      const list = await invoke<any[]>("get_running_apps");
+      // Filter out processes with empty names and sort by CPU usage
+      const filtered = list
+        .filter(p => p.name.trim() !== "")
+        .sort((a, b) => b.cpu_usage - a.cpu_usage);
+      setProcesses(filtered);
+    } catch (err) {
+      console.error("Failed to fetch processes:", err);
+    } finally {
+      setProcessLoading(false);
+    }
+  };
+
+  const closeProcess = async (pid: number) => {
+    try {
+      await invoke("kill_process", { pid });
+      setTimeout(refreshProcesses, 500); // Refresh after a short delay
+    } catch (err) {
+      console.error("Failed to kill process:", err);
+    }
+  };
 
   const startCamera = async () => {
     setCameraError(null);
@@ -290,6 +321,78 @@ export default function DebugPage() {
                     Awaiting test execution...
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4 pt-4 mt-6 border-t border-border">
+            <h2 className="text-xl font-bold border-b border-border pb-2">Running Applications</h2>
+            <p className="text-sm text-muted-foreground">
+              Monitor and close other running applications on this system.
+            </p>
+
+            <div className="flex flex-col gap-4 pt-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Filter by name..."
+                  className="flex-1 bg-muted/50 border border-border rounded-lg px-4 h-11 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  value={processSearch}
+                  onChange={(e) => setProcessSearch(e.target.value)}
+                />
+                <Button
+                  onClick={refreshProcesses}
+                  disabled={processLoading}
+                  variant="secondary"
+                  className="h-11 px-6 font-bold"
+                >
+                  {processLoading ? "Refreshing..." : "Refresh List"}
+                </Button>
+              </div>
+
+              <div className="border border-border rounded-lg overflow-hidden bg-muted/20">
+                <div className="max-h-[400px] overflow-y-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-muted/50 text-muted-foreground font-medium sticky top-0">
+                      <tr>
+                        <th className="px-4 py-3">Name</th>
+                        <th className="px-4 py-3 text-right">PID</th>
+                        <th className="px-4 py-3 text-right">CPU %</th>
+                        <th className="px-4 py-3 text-right">Mem (MB)</th>
+                        <th className="px-4 py-3 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {processes
+                        .filter(p => !processSearch || p.name.toLowerCase().includes(processSearch.toLowerCase()))
+                        .slice(0, 50) // Limit to top 50
+                        .map((p) => (
+                          <tr key={p.pid} className="hover:bg-muted/10 transition-colors">
+                            <td className="px-4 py-3 font-medium truncate max-w-[150px]">{p.name}</td>
+                            <td className="px-4 py-3 text-right font-mono text-xs">{p.pid}</td>
+                            <td className="px-4 py-3 text-right">{p.cpu_usage.toFixed(1)}%</td>
+                            <td className="px-4 py-3 text-right">{(p.memory_usage / 1024 / 1024).toFixed(0)}</td>
+                            <td className="px-4 py-3 text-right">
+                              {/* Don't allow killing itself or critical system things if we can identify them */}
+                              <Button
+                                onClick={() => closeProcess(p.pid)}
+                                size="sm"
+                                variant="destructive"
+                                className="h-7 text-[10px] px-2 font-bold"
+                              >
+                                CLOSE
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                  {processes.length === 0 && (
+                    <div className="p-8 text-center text-muted-foreground italic">
+                      No applications found or awaiting refresh...
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
