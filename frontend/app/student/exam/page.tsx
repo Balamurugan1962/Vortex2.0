@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { ToastProvider, useToast } from "@/components/ui/toast";
 import {
     Timer,
     Wifi,
@@ -36,6 +37,37 @@ const getTauriWindow = async () => {
         return getCurrentWindow();
     }
     return null;
+};
+
+const invokeTauriCommand = async (command: string, args?: any) => {
+    if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__) {
+        const { invoke } = await import("@tauri-apps/api/core");
+        return invoke(command, args);
+    }
+    return null;
+};
+
+interface Violation {
+    id?: number;
+    timestamp: string;
+    event_type: string;
+    confidence: number;
+    type?: string;
+}
+
+interface ViolationCounts {
+    [key: string]: number;
+}
+
+const VIOLATION_MESSAGES: { [key: string]: string } = {
+    NO_FACE_DETECTED: "No face detected in frame",
+    MULTIPLE_FACE_DETECTED: "Multiple persons detected",
+    PHONE_DETECTED: "Phone or gadget detected",
+    LAPTOP_DETECTED: "Unauthorized laptop detected",
+    MONITOR_DETECTED: "Additional monitor detected",
+    VOICE_DETECTED: "Voice/audio detected",
+    KEYBOARD_NAVIGATION_ATTEMPT: "Keyboard navigation attempt",
+    WINDOW_SWITCH_DETECTED: "Window switching detected",
 };
 
 // Mock Question Data
@@ -76,15 +108,168 @@ const mockQuestions = [
 ];
 
 export default function ExamPage() {
+    return (
+        <ToastProvider>
+            <ExamContent />
+        </ToastProvider>
+    );
+}
+
+function ExamContent() {
     const router = useRouter();
+    const { addToast } = useToast();
     const [currentIdx, setCurrentIdx] = useState(0);
     const [timeLeft, setTimeLeft] = useState(3600);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [lastSaved, setLastSaved] = useState(new Date());
     const [isSaving, setIsSaving] = useState(false);
     const [violations, setViolations] = useState(0);
+    const [violationCounts, setViolationCounts] = useState<ViolationCounts>({});
     const [isFullscreen, setIsFullscreen] = useState(true);
     const [isScreenSharing, setIsScreenSharing] = useState(true);
+    const [isMonitoringActive, setIsMonitoringActive] = useState(false);
+    const wsRef = useRef<WebSocket | null>(null);
+    const lastViolationTime = useRef<{ [key: string]: number }>({});
+
+    // Thresholds
+    const TOTAL_VIOLATION_THRESHOLD = 10;
+    const SAME_TYPE_THRESHOLD = 3;
+    const VIOLATION_COOLDOWN = 8000; // 8 seconds cooldown between same violation toasts
+
+    // Start monitoring on mount
+    useEffect(() => {
+        const startMonitoring = async () => {
+            try {
+                await invokeTauriCommand("start_exam_monitoring");
+                setIsMonitoringActive(true);
+                console.log("Exam monitoring started");
+
+                // Connect to violation WebSocket
+                connectToViolationWebSocket();
+            } catch (error) {
+                console.error("Failed to start monitoring:", error);
+                addToast({
+                    title: "Monitoring Error",
+                    description: "Failed to start exam monitoring",
+                    variant: "destructive",
+                    duration: 5000,
+                });
+            }
+        };
+
+        startMonitoring();
+
+        return () => {
+            stopMonitoring();
+        };
+    }, []);
+
+    const connectToViolationWebSocket = () => {
+        try {
+            const ws = new WebSocket("ws://localhost:8000/ws/violations");
+
+            ws.onopen = () => {
+                console.log("Connected to violation stream");
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data) as Violation;
+                    
+                    // Skip ping messages
+                    if (data.type === "ping") return;
+                    
+                    if (data.event_type && data.type === "violation") {
+                        handleViolation(data);
+                    }
+                } catch (error) {
+                    console.error("Error parsing violation data:", error);
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error("WebSocket error:", error);
+            };
+
+            ws.onclose = () => {
+                console.log("Violation stream disconnected");
+                // Attempt reconnection after 3 seconds
+                setTimeout(() => {
+                    if (isMonitoringActive) {
+                        connectToViolationWebSocket();
+                    }
+                }, 3000);
+            };
+
+            wsRef.current = ws;
+        } catch (error) {
+            console.error("Failed to connect to violation stream:", error);
+        }
+    };
+
+    const handleViolation = (violation: Violation) => {
+        const { event_type } = violation;
+        const now = Date.now();
+        const lastTime = lastViolationTime.current[event_type] || 0;
+
+        // Update violation counts
+        setViolationCounts((prev) => ({
+            ...prev,
+            [event_type]: (prev[event_type] || 0) + 1,
+        }));
+
+        setViolations((prev) => prev + 1);
+
+        // Show toast notification (with cooldown to prevent spam)
+        if (now - lastTime > VIOLATION_COOLDOWN) {
+            const message = VIOLATION_MESSAGES[event_type] || event_type;
+            const count = violationCounts[event_type] || 0;
+
+            addToast({
+                title: "Security Alert",
+                description: `${message} (${count + 1} times)`,
+                variant: "destructive",
+                duration: 6000,
+            });
+
+            lastViolationTime.current[event_type] = now;
+        }
+
+        // Check thresholds
+        const totalViolations = violations + 1;
+        const typeCount = (violationCounts[event_type] || 0) + 1;
+
+        if (totalViolations >= TOTAL_VIOLATION_THRESHOLD) {
+            addToast({
+                title: "Exam Terminated",
+                description: `Total violation threshold exceeded (${totalViolations})`,
+                variant: "destructive",
+                duration: 0,
+            });
+            setTimeout(() => handleSubmit("violations_exceeded"), 2000);
+        } else if (typeCount >= SAME_TYPE_THRESHOLD) {
+            addToast({
+                title: "Warning",
+                description: `Multiple ${VIOLATION_MESSAGES[event_type]?.toLowerCase()} violations detected`,
+                variant: "warning",
+                duration: 8000,
+            });
+        }
+    };
+
+    const stopMonitoring = async () => {
+        try {
+            if (wsRef.current) {
+                wsRef.current.close();
+                wsRef.current = null;
+            }
+            await invokeTauriCommand("stop_exam_monitoring");
+            setIsMonitoringActive(false);
+            console.log("Exam monitoring stopped");
+        } catch (error) {
+            console.error("Failed to stop monitoring:", error);
+        }
+    };
 
     useEffect(() => {
         const handleFullscreen = () => {
@@ -92,18 +277,35 @@ export default function ExamPage() {
             setIsFullscreen(isFS);
             if (!isFS) {
                 setViolations(prev => prev + 1);
+                addToast({
+                    title: "Security Alert",
+                    description: "Fullscreen mode exited",
+                    variant: "warning",
+                    duration: 5000,
+                });
             }
         };
 
         const handleSecurityEvents = (e: Event) => {
             e.preventDefault();
             setViolations(prev => prev + 1);
-            // Optionally show a toast/notification here
+            addToast({
+                title: "Security Alert",
+                description: "Unauthorized action detected",
+                variant: "destructive",
+                duration: 5000,
+            });
         };
 
         const handleFocus = () => {
             if (!document.hasFocus()) {
                 setViolations(prev => prev + 1);
+                addToast({
+                    title: "Security Alert",
+                    description: "Window focus lost",
+                    variant: "warning",
+                    duration: 5000,
+                });
             }
         };
 
@@ -125,22 +327,14 @@ export default function ExamPage() {
             document.removeEventListener("contextmenu", handleSecurityEvents);
             window.removeEventListener("blur", handleFocus);
         };
-    }, []);
-
-    useEffect(() => {
-        if (violations >= 3) {
-            handleSubmit();
-        }
-    }, [violations]);
-
-    const question = mockQuestions[currentIdx];
+    }, [addToast]);
 
     useEffect(() => {
         const timer = setInterval(() => {
             setTimeLeft(prev => {
                 if (prev <= 1) {
                     clearInterval(timer);
-                    handleSubmit();
+                    handleSubmit("time_expired");
                     return 0;
                 }
                 return prev - 1;
@@ -155,6 +349,8 @@ export default function ExamPage() {
         return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     };
 
+    const question = mockQuestions[currentIdx];
+
     const handleSave = () => {
         setIsSaving(true);
         setTimeout(() => {
@@ -163,8 +359,9 @@ export default function ExamPage() {
         }, 600);
     };
 
-    const handleSubmit = () => {
-        router.push("/student/result");
+    const handleSubmit = async (reason: string = "completed") => {
+        await stopMonitoring();
+        router.push(`/student/result?reason=${reason}&violations=${violations}`);
     };
 
     const reEnterFullscreen = async () => {
@@ -230,6 +427,28 @@ export default function ExamPage() {
                 </div>
 
                 <div className="p-6 border-t border-border bg-muted/5 space-y-4">
+                    {/* Violation Summary */}
+                    {violations > 0 && (
+                        <div className="space-y-2 p-3 bg-red-500/5 border border-red-500/20 rounded-md">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-black uppercase tracking-tighter text-red-600">
+                                    Total Violations
+                                </span>
+                                <Badge variant="destructive" className="font-bold">
+                                    {violations}/{TOTAL_VIOLATION_THRESHOLD}
+                                </Badge>
+                            </div>
+                            {Object.entries(violationCounts).map(([type, count]) => (
+                                <div key={type} className="flex items-center justify-between text-xs">
+                                    <span className="text-muted-foreground truncate">
+                                        {VIOLATION_MESSAGES[type] || type}
+                                    </span>
+                                    <span className="text-red-600 font-bold ml-2">{count}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    
                     <div className="space-y-2">
                         <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-tighter">
                             <span className="text-muted-foreground">Progress Tracking</span>
@@ -237,7 +456,7 @@ export default function ExamPage() {
                         </div>
                         <Progress value={20} className="h-1.5 bg-muted" />
                     </div>
-                    <Button onClick={handleSubmit} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-black h-12 shadow-lg shadow-primary/30 rounded-md transition-all">
+                    <Button onClick={() => handleSubmit("manual")} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-black h-12 shadow-lg shadow-primary/30 rounded-md transition-all">
                         Finalize & Submit
                     </Button>
                 </div>
@@ -394,7 +613,7 @@ export default function ExamPage() {
                                     setCurrentIdx(prev => prev + 1);
                                     handleSave();
                                 } else {
-                                    handleSubmit();
+                                    handleSubmit("completed");
                                 }
                             }}
                         >

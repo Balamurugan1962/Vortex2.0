@@ -7,6 +7,7 @@
   ],
   "permissions": [
     "core:default",
+    "core:window:allow-set-fullscreen",
     "clipboard-manager:default",
     "window-state:default",
     "shell:default"
