@@ -7,6 +7,8 @@
     "start": "node dist/index.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "seed": "ts-node src/scripts/seed.ts",
+    "seed-logs": "ts-node src/scripts/seed-test-logs.ts",
+    "demo-encryption": "ts-node src/scripts/demo-custom-encryption.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

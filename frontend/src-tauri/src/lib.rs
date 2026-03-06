@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use tauri::command;
-use std::collections::HashSet;
 
 const FASTAPI_URL: &str = "http://localhost:8000";
 
@@ -99,42 +98,84 @@ async fn check_screen_mirroring() -> Result<bool, String> {
     
     #[cfg(target_os = "windows")]
     {
-        use windows_sys::Win32::Graphics::Gdi::{EnumDisplaySettingsW, DEVMODEW, ENUM_CURRENT_SETTINGS};
-        
-        let mut i = 0;
-        let mut mirrored = false;
-        let mut positions = HashSet::new();
-        let mut _display_count = 0;
+        use std::collections::HashSet;
+        use windows_sys::Win32::Devices::Display::{
+            GetDisplayConfigBufferSizes, QueryDisplayConfig, DISPLAYCONFIG_MODE_INFO,
+            DISPLAYCONFIG_PATH_INFO, QDC_ONLY_ACTIVE_PATHS,
+        };
+        use windows_sys::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER;
 
-        unsafe {
-            loop {
-                let mut dev_mode: DEVMODEW = std::mem::zeroed();
-                dev_mode.dmSize = std::mem::size_of::<DEVMODEW>() as u16;
-                
-                // Get display name (e.g., \\.\DISPLAY1)
-                let mut display_name = [0u16; 32];
-                let name_str = format!("\\\\.\\DISPLAY{}", i + 1);
-                for (j, c) in name_str.encode_utf16().enumerate() {
-                    if j < 31 { display_name[j] = c; }
-                }
+        let mut path_count: u32 = 0;
+        let mut mode_count: u32 = 0;
 
-                if EnumDisplaySettingsW(display_name.as_ptr(), ENUM_CURRENT_SETTINGS, &mut dev_mode) != 0 {
-                    _display_count += 1;
-                    let pos = (dev_mode.Anonymous1.Anonymous2.dmPosition.x, dev_mode.Anonymous1.Anonymous2.dmPosition.y);
-                    if positions.contains(&pos) {
-                        mirrored = true;
-                        break;
-                    }
-                    positions.insert(pos);
-                    i += 1;
-                } else {
-                    break;
-                }
-            }
+        let mut status = unsafe {
+            GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut path_count, &mut mode_count)
+        };
+
+        if status != 0 {
+            return Err(format!(
+                "GetDisplayConfigBufferSizes failed with status {}",
+                status
+            ));
         }
-        
-        // If we found identical positions for different displays, it's mirrored
-        Ok(mirrored)
+
+        for _ in 0..3 {
+            let mut paths =
+                vec![unsafe { std::mem::zeroed::<DISPLAYCONFIG_PATH_INFO>() }; path_count as usize];
+            let mut modes =
+                vec![unsafe { std::mem::zeroed::<DISPLAYCONFIG_MODE_INFO>() }; mode_count as usize];
+
+            let mut current_path_count = path_count;
+            let mut current_mode_count = mode_count;
+
+            status = unsafe {
+                QueryDisplayConfig(
+                    QDC_ONLY_ACTIVE_PATHS,
+                    &mut current_path_count,
+                    paths.as_mut_ptr(),
+                    &mut current_mode_count,
+                    modes.as_mut_ptr(),
+                    std::ptr::null_mut(),
+                )
+            };
+
+            if status == ERROR_INSUFFICIENT_BUFFER {
+                status = unsafe {
+                    GetDisplayConfigBufferSizes(
+                        QDC_ONLY_ACTIVE_PATHS,
+                        &mut path_count,
+                        &mut mode_count,
+                    )
+                };
+
+                if status != 0 {
+                    return Err(format!(
+                        "GetDisplayConfigBufferSizes retry failed with status {}",
+                        status
+                    ));
+                }
+                continue;
+            }
+
+            if status != 0 {
+                return Err(format!("QueryDisplayConfig failed with status {}", status));
+            }
+
+            paths.truncate(current_path_count as usize);
+
+            let mut unique_sources = HashSet::new();
+            for path in &paths {
+                unique_sources.insert((
+                    path.sourceInfo.adapterId.HighPart,
+                    path.sourceInfo.adapterId.LowPart,
+                    path.sourceInfo.id,
+                ));
+            }
+
+            return Ok(paths.len() > unique_sources.len());
+        }
+
+        Err("Could not query active display paths after multiple retries".to_string())
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]

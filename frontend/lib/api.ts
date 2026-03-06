@@ -154,3 +154,149 @@ export async function deleteUser(id: string | number) {
 
     return await response.json();
 }
+
+// Integrity Log Functions
+export async function recordIntegrityLog(logData: {
+    user_email: string;
+    exam_id?: string;
+    submission_id?: number;
+    violation_type: string;
+    violation_timestamp: string;
+    confidence?: number;
+    frame_image_base64?: string;
+    screen_capture?: string;
+    keyboard_log?: string;
+    metadata?: any;
+    severity?: string;
+}) {
+    const response = await fetch(`${getBaseApiUrl()}/integrity/log`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(logData)
+    });
+
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to record integrity log');
+    }
+
+    return await response.json();
+}
+
+export async function getIntegrityLogs(examId: string, userEmail: string) {
+    const response = await fetch(`${getBaseApiUrl()}/integrity/${examId}/${userEmail}`, {
+        method: 'GET',
+        headers: authHeaders()
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to fetch integrity logs');
+    }
+
+    return await response.json();
+}
+
+export async function getIntegritySummary(examId: string, userEmail: string) {
+    const response = await fetch(`${getBaseApiUrl()}/integrity/summary/${examId}/${userEmail}`, {
+        method: 'GET',
+        headers: authHeaders()
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to fetch integrity summary');
+    }
+
+    return await response.json();
+}
+
+export async function getIntegrityFrame(logId: number) {
+    const response = await fetch(`${getBaseApiUrl()}/integrity/frame/${logId}`, {
+        method: 'GET',
+        headers: authHeaders()
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to fetch frame');
+    }
+
+    return await response.json();
+}
+
+export async function getAllIntegrityLogs(examId: string) {
+    const response = await fetch(`${getBaseApiUrl()}/integrity/all/${examId}`, {
+        method: 'GET',
+        headers: authHeaders()
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to fetch all integrity logs');
+    }
+
+    return await response.json();
+}
+
+// Activity Log Functions
+export async function recordActivityLog(logData: {
+    user_email: string;
+    exam_id?: string;
+    submission_id?: number;
+    event_type: string;
+    event_timestamp: string;
+    question_id?: string;
+    question_index?: number;
+    event_data?: any;
+}) {
+    const response = await fetch(`${getBaseApiUrl()}/activity/log`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(logData)
+    });
+
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to record activity log');
+    }
+
+    return await response.json();
+}
+
+export async function recordActivityBatch(logs: any[]) {
+    const response = await fetch(`${getBaseApiUrl()}/activity/batch`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ logs })
+    });
+
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to record activity logs');
+    }
+
+    return await response.json();
+}
+
+export async function getActivityLogs(examId: string, userEmail: string) {
+    const response = await fetch(`${getBaseApiUrl()}/activity/${examId}/${userEmail}`, {
+        method: 'GET',
+        headers: authHeaders()
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to fetch activity logs');
+    }
+
+    return await response.json();
+}
+
+export async function getActivitySummary(examId: string, userEmail: string) {
+    const response = await fetch(`${getBaseApiUrl()}/activity/summary/${examId}/${userEmail}`, {
+        method: 'GET',
+        headers: authHeaders()
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to fetch activity summary');
+    }
+
+    return await response.json();
+}

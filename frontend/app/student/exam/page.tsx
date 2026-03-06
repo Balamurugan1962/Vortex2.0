@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ToastProvider, useToast } from "@/components/ui/toast";
-import { getMe, getBaseApiUrl } from "@/lib/api";
+import { getMe, getBaseApiUrl, recordIntegrityLog, recordActivityLog, recordActivityBatch } from "@/lib/api";
 import {
     Timer,
     Wifi,
@@ -59,6 +59,16 @@ interface Violation {
 
 interface ViolationCounts {
     [key: string]: number;
+}
+
+interface ViolationLog {
+    id: string;
+    violation_type: string;
+    violation_timestamp: string;
+    confidence: number;
+    frame_image_base64?: string;
+    metadata: any;
+    severity: string;
 }
 
 const VIOLATION_MESSAGES: { [key: string]: string } = {
@@ -146,6 +156,7 @@ function ExamContent() {
     const [isFullscreen, setIsFullscreen] = useState(true);
     const [isScreenSharing, setIsScreenSharing] = useState(true);
     const [isMonitoringActive, setIsMonitoringActive] = useState(false);
+    const [violationLogs, setViolationLogs] = useState<ViolationLog[]>([]);
     const wsRef = useRef<WebSocket | null>(null);
     const lastViolationTime = useRef<{ [key: string]: number }>({});
     const lastFullscreenState = useRef<boolean>(true);
@@ -155,6 +166,9 @@ function ExamContent() {
     const [isAlreadySubmitted, setIsAlreadySubmitted] = useState(false);
     const [responses, setResponses] = useState<{ [key: string]: any }>({});
     const actualViolationCount = useRef<number>(0);  // Track actual count synchronously
+    const [activityLogs, setActivityLogs] = useState<any[]>([]);
+    const questionStartTime = useRef<{ [key: string]: number }>({});
+    const examStartTime = useRef<number>(Date.now());
 
     // Thresholds
     const TOTAL_VIOLATION_THRESHOLD = 10;
@@ -253,6 +267,36 @@ function ExamContent() {
         fetchQuestions();
     }, [permissionsVerified, addToast]);
 
+    // Track question changes and time spent
+    useEffect(() => {
+        if (!questions.length || !userEmail) return;
+
+        const currentQuestion = questions[currentIdx];
+        if (!currentQuestion) return;
+
+        // Log time spent on previous question
+        const prevQuestionId = Object.keys(questionStartTime.current).pop();
+        if (prevQuestionId && questionStartTime.current[prevQuestionId]) {
+            const timeSpent = Date.now() - questionStartTime.current[prevQuestionId];
+            logActivity('TIME_SPENT_ON_QUESTION', {
+                question_id: prevQuestionId,
+                time_spent_ms: timeSpent,
+                time_spent_seconds: Math.floor(timeSpent / 1000)
+            });
+        }
+
+        // Mark new question start time
+        questionStartTime.current[currentQuestion.id] = Date.now();
+
+        // Log question navigation
+        logActivity('QUESTION_VIEWED', {
+            question_id: currentQuestion.id,
+            question_type: currentQuestion.type,
+            question_index: currentIdx,
+            has_previous_answer: !!responses[currentQuestion.id]
+        });
+    }, [currentIdx, questions, userEmail]);
+
     // Start monitoring on mount
     useEffect(() => {
         if (!permissionsVerified) return;
@@ -287,6 +331,14 @@ function ExamContent() {
 
                 // Request fullscreen on exam start
                 setTimeout(() => reEnterFullscreen(), 500);
+
+                // Log exam start
+                examStartTime.current = Date.now();
+                logActivity('EXAM_STARTED', {
+                    permissions_granted: true,
+                    monitoring_active: true,
+                    total_questions: questions.length
+                });
 
                 addToast({
                     title: "Exam Started",
@@ -401,6 +453,23 @@ function ExamContent() {
             ...prev,
             [event_type]: (prev[event_type] || 0) + 1,
         }));
+
+        // Store violation log with all details
+        const newViolationLog: ViolationLog = {
+            id: `${Date.now()}-${Math.random().toString(36).substring(7)}`,
+            violation_type: event_type || 'UNKNOWN',
+            violation_timestamp: new Date().toISOString(),
+            confidence: violation.confidence || 0.9,
+            frame_image_base64: (violation as any).frame_image_base64,
+            metadata: {
+                violation_count: totalViolations,
+                max_violations: TOTAL_VIOLATION_THRESHOLD,
+                ...violation
+            },
+            severity: totalViolations >= VIOLATION_WARNING_THRESHOLD ? 'high' : 'medium'
+        };
+
+        setViolationLogs((prev) => [...prev, newViolationLog]);
 
         // Show toast notification (with cooldown to prevent spam)
         if (now - lastTime > VIOLATION_COOLDOWN) {
@@ -613,11 +682,32 @@ function ExamContent() {
         return () => clearInterval(timer);
     }, []);
 
+    // Activity logging helper
+    const logActivity = (eventType: string, eventData: any = {}) => {
+        const activityLog = {
+            user_email: userEmail || '',
+            exam_id: localStorage.getItem("vortex_active_exam_id") || "default",
+            event_type: eventType,
+            event_timestamp: new Date().toISOString(),
+            question_id: questions[currentIdx]?.id,
+            question_index: currentIdx,
+            event_data: eventData
+        };
+        setActivityLogs(prev => [...prev, activityLog]);
+    };
+
     const handleAnswerChange = (questionId: string, answer: any) => {
         setResponses(prev => ({
             ...prev,
             [questionId]: answer
         }));
+
+        // Log answer change activity
+        logActivity('ANSWER_CHANGED', {
+            question_id: questionId,
+            answer: answer,
+            timestamp: new Date().toISOString()
+        });
 
         // Update question state to "answered"
         setQuestions(prev => prev.map(q =>
@@ -644,6 +734,15 @@ function ExamContent() {
     const handleSubmit = async (reason: string = "completed") => {
         setIsSaving(true);
         try {
+            // Log final exam submission event
+            logActivity('EXAM_SUBMITTED', {
+                reason,
+                total_questions: questions.length,
+                questions_answered: Object.keys(responses).length,
+                total_violations: violations,
+                exam_duration_ms: Date.now() - examStartTime.current
+            });
+
             await stopMonitoring();
 
             // Post submission to backend
@@ -656,22 +755,80 @@ function ExamContent() {
                 violation_details: violationCounts
             };
 
+            console.log('📤 Submitting exam...', { examId, userEmail, violations, activityLogs: activityLogs.length, violationLogs: violationLogs.length });
+
             const response = await fetch(`${getBaseApiUrl()}/submissions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(submissionData)
             });
 
-            if (!response.ok && response.status !== 409) {
+            let submissionId: number | null = null;
+            if (response.ok) {
+                const submissionResult = await response.json();
+                submissionId = submissionResult.id;
+                console.log('✅ Submission saved with ID:', submissionId);
+            } else if (response.status !== 409) {
+                const errorData = await response.text();
+                console.error('Submission save error:', response.status, errorData);
                 throw new Error('Failed to save submission');
             }
 
+            // Post all violation logs to integrity logger
+            console.log(`📋 Recording ${violationLogs.length} integrity violations`);
+            if (violationLogs.length > 0) {
+                for (let i = 0; i < violationLogs.length; i++) {
+                    const log = violationLogs[i];
+                    try {
+                        console.log(`  [${i + 1}/${violationLogs.length}] Sending ${log.violation_type}...`);
+                        const integrityResult = await recordIntegrityLog({
+                            user_email: userEmail || '',
+                            exam_id: examId,
+                            submission_id: submissionId || undefined,
+                            violation_type: log.violation_type,
+                            violation_timestamp: log.violation_timestamp,
+                            confidence: log.confidence,
+                            frame_image_base64: log.frame_image_base64,
+                            metadata: log.metadata,
+                            severity: log.severity
+                        });
+                        console.log(`  ✅ Violation ${i + 1} recorded`);
+                    } catch (logError) {
+                        console.error(`  ❌ Failed to record violation ${i + 1}:`, logError);
+                    }
+                }
+            } else {
+                console.log('ℹ️ No violations to record');
+            }
+
+            // Post all activity logs in batch
+            console.log(`📝 Recording ${activityLogs.length} activity logs`);
+            if (activityLogs.length > 0) {
+                try {
+                    // Add submission_id to all activity logs
+                    const logsWithSubmission = activityLogs.map(log => ({
+                        ...log,
+                        submission_id: submissionId
+                    }));
+                    
+                    console.log('  Sending batch with logs:', logsWithSubmission.length);
+                    const batchResult = await recordActivityBatch(logsWithSubmission);
+                    console.log('✅ All activity logs recorded:', batchResult);
+                } catch (activityError) {
+                    console.error('❌ Failed to record activity logs:', activityError);
+                    // Still continue to results even if activity logs fail
+                }
+            } else {
+                console.log('ℹ️ No activity logs to record');
+            }
+
+            console.log('✅ Exam submission complete');
             router.push(`/student/result?reason=${reason}&violations=${violations}`);
         } catch (error) {
             console.error("Submission failed:", error);
             addToast({
                 title: "Submission Error",
-                description: "Failed to sync your results. Please contact the invigilator.",
+                description: error instanceof Error ? error.message : "Failed to sync your results. Please contact the invigilator.",
                 variant: "destructive",
                 duration: 0
             });

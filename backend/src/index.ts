@@ -9,6 +9,8 @@ import questionsRoutes from './routes/questions';
 import submissionsRoutes from './routes/submissions';
 import examsRoutes from './routes/exams';
 import encryptionRoutes from './routes/encryption';
+import integrityRoutes from './routes/integrity';
+import activityRoutes from './routes/activity';
 
 dotenv.config();
 
@@ -31,10 +33,12 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/questions', questionsRoutes);
 app.use('/api/submissions', submissionsRoutes);
 app.use('/api/encryption', encryptionRoutes);
+app.use('/api/integrity', integrityRoutes);
+app.use('/api/activity', activityRoutes);
 console.log('Registered /api/questions');
 console.log('Registered /api/encryption');
 app.use('/api/exams', examsRoutes);
-console.log('Registered /api/questions, /api/submissions, /api/exams');
+console.log('Registered /api/questions, /api/submissions, /api/exams, /api/integrity, /api/activity');
 
 // Test raw DB connection route
 app.get('/api/health', async (req, res) => {

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Trash2, AlertCircle, Loader2, LogOut, ShieldCheck, UserPlus } from "lucide-react";
+import { Trash2, AlertCircle, Loader2, LogOut, ShieldCheck, UserPlus, Eye } from "lucide-react";
 
 export default function AdminDashboard() {
     const router = useRouter();
@@ -257,21 +257,32 @@ export default function AdminDashboard() {
                                                     {new Date(user.created_at).toLocaleDateString()}
                                                 </td>
                                                 <td className="px-4 py-3 text-right">
-                                                    {user.role !== 'admin' && (
+                                                    <div className="flex justify-end gap-2">
                                                         <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            onClick={() => handleDeleteUser(user.id)}
-                                                            disabled={actionLoading === `delete-${user.id}`}
-                                                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={() => router.push(`/admin/user-profile?email=${encodeURIComponent(user.email)}`)}
+                                                            className="gap-2"
                                                         >
-                                                            {actionLoading === `delete-${user.id}` ? (
-                                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                                            ) : (
-                                                                <Trash2 className="w-4 h-4" />
-                                                            )}
+                                                            <Eye className="w-4 h-4" />
+                                                            Profile
                                                         </Button>
-                                                    )}
+                                                        {user.role !== 'admin' && (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                onClick={() => handleDeleteUser(user.id)}
+                                                                disabled={actionLoading === `delete-${user.id}`}
+                                                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                                            >
+                                                                {actionLoading === `delete-${user.id}` ? (
+                                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                                ) : (
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                )}
+                                                            </Button>
+                                                        )}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
