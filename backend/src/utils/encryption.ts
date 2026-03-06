@@ -37,25 +37,39 @@ export interface DecryptedPackage {
  * Generate RSA-4096 key pair (one-time setup)
  */
 export function generateRSAKeyPair(): { privateKey: string; publicKey: string } {
-    const key = new NodeRSA({ b: 4096 });
+    try {
+        const key = new NodeRSA({ b: 4096 });
 
-    const privateKey = key.exportKey('private');
-    const publicKey = key.exportKey('public');
+        const privateKey = key.exportKey('private');
+        const publicKey = key.exportKey('public');
 
-    // Save to files
-    fs.writeFileSync(PRIVATE_KEY_PATH, privateKey);
-    fs.writeFileSync(PUBLIC_KEY_PATH, publicKey);
+        // Save to files
+        fs.writeFileSync(PRIVATE_KEY_PATH, privateKey);
+        fs.writeFileSync(PUBLIC_KEY_PATH, publicKey);
 
-    console.log('✓ RSA Key Pair generated and saved to', KEY_DIR);
+        console.log('✓ RSA Key Pair generated and saved to', KEY_DIR);
 
-    return { privateKey, publicKey };
+        return { privateKey, publicKey };
+    } catch (error) {
+        console.error('Error generating RSA key pair:', error);
+        throw error;
+    }
 }
 
 /**
  * Check if RSA keys exist
  */
 export function keysExist(): boolean {
-    return fs.existsSync(PRIVATE_KEY_PATH) && fs.existsSync(PUBLIC_KEY_PATH);
+    try {
+        const privExists = fs.existsSync(PRIVATE_KEY_PATH);
+        const pubExists = fs.existsSync(PUBLIC_KEY_PATH);
+        const result = privExists && pubExists;
+        console.log(`Checking keys: private=${privExists}, public=${pubExists}, exists=${result}`);
+        return result;
+    } catch (error) {
+        console.error('Error checking if keys exist:', error);
+        return false;
+    }
 }
 
 /**

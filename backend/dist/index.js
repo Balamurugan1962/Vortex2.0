@@ -21,6 +21,7 @@ const admin_1 = __importDefault(require("./routes/admin"));
 const settings_1 = __importDefault(require("./routes/settings"));
 const questions_1 = __importDefault(require("./routes/questions"));
 const submissions_1 = __importDefault(require("./routes/submissions"));
+const exams_1 = __importDefault(require("./routes/exams"));
 const encryption_1 = __importDefault(require("./routes/encryption"));
 dotenv_1.default.config();
 console.log('Starting Vortex Backend...');
@@ -40,6 +41,8 @@ app.use('/api/submissions', submissions_1.default);
 app.use('/api/encryption', encryption_1.default);
 console.log('Registered /api/questions');
 console.log('Registered /api/encryption');
+app.use('/api/exams', exams_1.default);
+console.log('Registered /api/questions, /api/submissions, /api/exams');
 // Test raw DB connection route
 app.get('/api/health', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -56,6 +59,6 @@ app.get('/api', (req, res) => {
     res.json({ message: 'Welcome to Vortex API' });
 });
 // Start the server
-app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
+app.listen(port, '0.0.0.0', () => {
+    console.log(`Server is running on port ${port} and listening on all interfaces (0.0.0.0)`);
 });

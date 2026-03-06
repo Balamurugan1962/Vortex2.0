@@ -14,18 +14,14 @@ const packageStorage = new Map();
  */
 router.post('/init-keys', (req, res) => {
     try {
-        if ((0, encryption_1.keysExist)()) {
-            return res.json({
-                status: 'success',
-                message: 'RSA keys already exist',
-                keysPath: path_1.default.join(process.cwd(), 'keys'),
-            });
-        }
+        // Always generate fresh keys
+        console.log('[INIT-KEYS] Generating RSA-4096 key pair...');
         const { privateKey, publicKey } = (0, encryption_1.generateRSAKeyPair)();
+        console.log('[INIT-KEYS] Successfully generated keys');
         res.json({
             status: 'success',
             message: 'RSA-4096 key pair generated successfully',
-            publicKey: publicKey.substring(0, 50) + '...',
+            publicKey: publicKey.substring(0, 100) + '...',
             keysPath: path_1.default.join(process.cwd(), 'keys'),
         });
     }
@@ -157,11 +153,10 @@ router.get('/packages', (req, res) => {
  */
 router.get('/demo', (req, res) => {
     try {
+        // Auto-initialize keys if they don't exist
         if (!(0, encryption_1.keysExist)()) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'RSA keys not initialized',
-            });
+            console.log('Keys not found, auto-initializing RSA-4096...');
+            (0, encryption_1.generateRSAKeyPair)();
         }
         const sampleQuestion = `EXAM: Mathematics Advanced
 Question 1: Calculate the derivative
