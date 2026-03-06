@@ -29,19 +29,14 @@ const packageStorage: Map<string, StoredPackage> = new Map();
  */
 router.post('/init-keys', (req: Request, res: Response) => {
     try {
-        if (keysExist()) {
-            return res.json({
-                status: 'success',
-                message: 'RSA keys already exist',
-                keysPath: path.join(process.cwd(), 'keys'),
-            });
-        }
-
+        // Always generate fresh keys
+        console.log('[INIT-KEYS] Generating RSA-4096 key pair...');
         const { privateKey, publicKey } = generateRSAKeyPair();
+        console.log('[INIT-KEYS] Successfully generated keys');
         res.json({
             status: 'success',
             message: 'RSA-4096 key pair generated successfully',
-            publicKey: publicKey.substring(0, 50) + '...',
+            publicKey: publicKey.substring(0, 100) + '...',
             keysPath: path.join(process.cwd(), 'keys'),
         });
     } catch (error) {
@@ -184,11 +179,10 @@ router.get('/packages', (req: Request, res: Response) => {
  */
 router.get('/demo', (req: Request, res: Response) => {
     try {
+        // Auto-initialize keys if they don't exist
         if (!keysExist()) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'RSA keys not initialized',
-            });
+            console.log('Keys not found, auto-initializing RSA-4096...');
+            generateRSAKeyPair();
         }
 
         const sampleQuestion = `EXAM: Mathematics Advanced
