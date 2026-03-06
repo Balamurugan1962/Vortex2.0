@@ -247,6 +247,16 @@ async def monitor_violations():
         await asyncio.sleep(0.5)  # Check twice per second
 
 
+@app.post("/setup")
+async def setup_environment():
+    print("Preloading camera and warming up resources...")
+    cap = CameraSingleton.get_cap()
+    if cap and cap.isOpened():
+        # Read a few frames to warm up
+        for _ in range(5):
+            CameraSingleton.read_frame()
+    return {"status": "setup_complete"}
+
 @app.post("/start_exam")
 async def start_exam():
     global exam_session_state, violation_monitor_task

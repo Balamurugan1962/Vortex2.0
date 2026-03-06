@@ -19,6 +19,22 @@ pub struct Violation {
 }
 
 #[command]
+async fn setup_exam_monitoring() -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}/setup", FASTAPI_URL))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to connect to monitoring service for setup: {}", e))?;
+    
+    if response.status().is_success() {
+        Ok("Setup complete".to_string())
+    } else {
+        Err("Failed to setup monitoring".to_string())
+    }
+}
+
+#[command]
 async fn start_exam_monitoring() -> Result<String, String> {
     let client = reqwest::Client::new();
     let response = client
@@ -248,6 +264,7 @@ pub fn run() {
     .plugin(tauri_plugin_screenshots::init())
     .plugin(tauri_plugin_fs::init())
     .invoke_handler(tauri::generate_handler![
+        setup_exam_monitoring,
         start_exam_monitoring,
         stop_exam_monitoring,
         get_violations,
