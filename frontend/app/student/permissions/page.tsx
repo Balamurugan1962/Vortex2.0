@@ -24,6 +24,14 @@ const getTauriClipboard = async () => {
     return null;
 };
 
+const invokeTauriCommand = async (command: string, args?: any) => {
+    if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__) {
+        const { invoke } = await import("@tauri-apps/api/core");
+        return invoke(command, args);
+    }
+    return null;
+};
+
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const getFullscreenStatus = async (): Promise<boolean> => {
@@ -62,6 +70,9 @@ export default function PermissionsPage() {
     const [checking, setChecking] = useState(false);
 
     useEffect(() => {
+        // Pre-warm the camera and models in the background
+        invokeTauriCommand("setup_exam_monitoring").catch(console.error);
+
         sessionStorage.setItem("vortex.permissions.granted", "false");
 
         const syncPermissions = async () => {
