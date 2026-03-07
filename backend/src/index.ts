@@ -21,38 +21,48 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Initialize Database
-initDb();
-
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/questions', questionsRoutes);
-app.use('/api/submissions', submissionsRoutes);
-app.use('/api/encryption', encryptionRoutes);
-console.log('Registered /api/questions');
-console.log('Registered /api/encryption');
-app.use('/api/exams', examsRoutes);
-console.log('Registered /api/questions, /api/submissions, /api/exams');
-
-// Test raw DB connection route
-app.get('/api/health', async (req, res) => {
+// Startup function
+const startServer = async () => {
     try {
-        const result = await pool.query('SELECT NOW()');
-        res.json({ status: 'ok', time: result.rows[0].now });
+        // Initialize Database
+        await initDb();
+
+        // Routes
+        app.use('/api/auth', authRoutes);
+        app.use('/api/admin', adminRoutes);
+        app.use('/api/settings', settingsRoutes);
+        app.use('/api/questions', questionsRoutes);
+        app.use('/api/submissions', submissionsRoutes);
+        app.use('/api/encryption', encryptionRoutes);
+        console.log('Registered /api/questions');
+        console.log('Registered /api/encryption');
+        app.use('/api/exams', examsRoutes);
+        console.log('Registered /api/questions, /api/submissions, /api/exams');
+
+        // Test raw DB connection route
+        app.get('/api/health', async (req, res) => {
+            try {
+                const result = await pool.query('SELECT NOW()');
+                res.json({ status: 'ok', time: result.rows[0].now });
+            } catch (error) {
+                console.error(error);
+                res.status(500).json({ status: 'error', message: 'Database connection failed' });
+            }
+        });
+
+        // Example route
+        app.get('/api', (req, res) => {
+            res.json({ message: 'Welcome to Vortex API' });
+        });
+
+        // Start the server
+        app.listen(port as number, '0.0.0.0', () => {
+            console.log(`Server is running on port ${port} and listening on all interfaces (0.0.0.0)`);
+        });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ status: 'error', message: 'Database connection failed' });
+        console.error('Failed to start server:', error);
+        process.exit(1);
     }
-});
+};
 
-// Example route
-app.get('/api', (req, res) => {
-    res.json({ message: 'Welcome to Vortex API' });
-});
-
-// Start the server
-app.listen(port as number, '0.0.0.0', () => {
-    console.log(`Server is running on port ${port} and listening on all interfaces (0.0.0.0)`);
-});
+startServer();

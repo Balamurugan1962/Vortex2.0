@@ -23,6 +23,9 @@ services:
     environment:
       - PORT=3001
       - DATABASE_URL=postgresql://postgres:password@db:5432/vortex
+    volumes:
+      - ./backend/dist:/app/dist
+      - ./backend/src:/app/src
     depends_on:
       - db
 

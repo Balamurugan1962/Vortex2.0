@@ -8,20 +8,6 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Note: We can expand this with exam records, organization ids etc later.
-
-CREATE TABLE IF NOT EXISTS questions (
-    id SERIAL PRIMARY KEY,
-    exam_id VARCHAR(255) REFERENCES exams(id) ON DELETE CASCADE,
-    type VARCHAR(50) NOT NULL,
-    question TEXT NOT NULL,
-    options JSONB,
-    correct_answers JSONB,
-    order_index INTEGER DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE TABLE IF NOT EXISTS settings (
     key VARCHAR(255) PRIMARY KEY,
     value VARCHAR(255) NOT NULL,
@@ -47,6 +33,20 @@ INSERT INTO exams (id, title, description)
 VALUES ('default', 'General Assessment', 'Primary examination module for testing and evaluation.')
 ON CONFLICT (id) DO NOTHING;
 
+-- Note: We can expand this with exam records, organization ids etc later.
+
+CREATE TABLE IF NOT EXISTS questions (
+    id SERIAL PRIMARY KEY,
+    exam_id VARCHAR(255) REFERENCES exams(id) ON DELETE CASCADE,
+    type VARCHAR(50) NOT NULL,
+    question TEXT NOT NULL,
+    options JSONB,
+    correct_answers JSONB,
+    order_index INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS submissions (
     id SERIAL PRIMARY KEY,
     user_email VARCHAR(255) NOT NULL,
@@ -58,3 +58,4 @@ CREATE TABLE IF NOT EXISTS submissions (
     submitted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_email, exam_id)
 );
+

@@ -21,15 +21,24 @@ dotenv_1.default.config();
 exports.pool = new pg_1.Pool({
     connectionString: process.env.DATABASE_URL || 'postgresql://postgres:password@db:5432/vortex',
 });
-const initDb = () => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const initSqlPath = path_1.default.join(process.cwd(), 'src', 'db', 'init.sql');
-        const sql = fs_1.default.readFileSync(initSqlPath, 'utf8');
-        yield exports.pool.query(sql);
-        console.log('Database initialized successfully.');
-    }
-    catch (error) {
-        console.error('Failed to initialize database:', error);
+const initDb = (...args_1) => __awaiter(void 0, [...args_1], void 0, function* (retries = 5, delay = 5000) {
+    while (retries > 0) {
+        try {
+            const initSqlPath = path_1.default.join(process.cwd(), 'src', 'db', 'init.sql');
+            const sql = fs_1.default.readFileSync(initSqlPath, 'utf8');
+            yield exports.pool.query(sql);
+            console.log('Database initialized successfully.');
+            return;
+        }
+        catch (error) {
+            retries -= 1;
+            console.error(`Database initialization attempt failed. Retries left: ${retries}`);
+            if (retries === 0) {
+                console.error('Final database initialization failure:', error);
+                throw error;
+            }
+            yield new Promise(res => setTimeout(res, delay));
+        }
     }
 });
 exports.initDb = initDb;
