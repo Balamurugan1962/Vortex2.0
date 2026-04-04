@@ -10,12 +10,24 @@ export const pool = new Pool({
 });
 
 export const initDb = async () => {
-    try {
-        const initSqlPath = path.join(process.cwd(), 'src', 'db', 'init.sql');
-        const sql = fs.readFileSync(initSqlPath, 'utf8');
-        await pool.query(sql);
-        console.log('Database initialized successfully.');
-    } catch (error) {
-        console.error('Failed to initialize database:', error);
+    const initSqlPath = path.join(process.cwd(), 'src', 'db', 'init.sql');
+    const sql = fs.readFileSync(initSqlPath, 'utf8');
+
+    const maxAttempts = 10;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            await pool.query(sql);
+            console.log('Database initialized successfully.');
+            return;
+        } catch (error) {
+            const isLastAttempt = attempt === maxAttempts;
+            console.error(`Failed to initialize database (attempt ${attempt}/${maxAttempts}):`, error);
+
+            if (isLastAttempt) {
+                throw error;
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
     }
 };

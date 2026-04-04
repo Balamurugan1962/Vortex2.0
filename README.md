@@ -83,7 +83,7 @@ By offloading AI processing to the student machine, OffGuard reduces cloud compu
 ### Quick Start (For dev):
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/Balamurugan1962/Vortex2.0.git
+   git clone https://github.com/prawinkumar1506/Offguard-ai-proctoring-engine.git
    ```
 
 2. **Start the Backend Infrastructure:**

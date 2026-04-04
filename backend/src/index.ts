@@ -21,9 +21,6 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Initialize Database
-initDb();
-
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
@@ -52,7 +49,17 @@ app.get('/api', (req, res) => {
     res.json({ message: 'Welcome to Vortex API' });
 });
 
-// Start the server
-app.listen(port as number, '0.0.0.0', () => {
-    console.log(`Server is running on port ${port} and listening on all interfaces (0.0.0.0)`);
-});
+const startServer = async () => {
+    try {
+        await initDb();
+
+        app.listen(port as number, '0.0.0.0', () => {
+            console.log(`Server is running on port ${port} and listening on all interfaces (0.0.0.0)`);
+        });
+    } catch (error) {
+        console.error('Backend startup failed due to database initialization error:', error);
+        process.exit(1);
+    }
+};
+
+startServer();
